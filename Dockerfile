@@ -19,22 +19,10 @@ RUN npm run build
 
 
 # Production stage
-FROM node:18-alpine AS runner
+FROM nginx:alpine AS runner
 
-WORKDIR /app
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-ENV NODE_ENV=production
-ENV PORT=3001
-EXPOSE 3001
+EXPOSE 80
 
-# Copy standalone server
-COPY --from=builder /app/.next/standalone ./
-
-# Copy static assets (Tailwind, CSS, etc.)
-COPY --from=builder /app/.next/static ./.next/static
-
-# Copy public folder (images, icons, etc.)
-COPY --from=builder /app/public ./public
-
-# Start the Next.js server
-CMD ["node", "server.js"]
+CMD ["nginx", "-g", "daemon off;"]

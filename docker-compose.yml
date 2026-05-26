@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  krt-crm:
+    image: dharvikvayuz/krt:0.0.1-ai
+    container_name: krt-crm
+    ports:
+      - "3002:80"
+    restart: always

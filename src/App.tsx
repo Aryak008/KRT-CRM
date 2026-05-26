@@ -1644,6 +1644,21 @@ export default function App() {
 
   const toggleSidebar = () => setSidebarOpen(p => { const v = !p; try { localStorage.setItem("krt_sidebar", v ? "1" : "0"); } catch {} return v; });
 
+  // Hardcoded fallback admin — always available even if DB has no users yet
+  const HARDCODED_ADMIN = {
+    id: "hardcoded-admin-001",
+    name: "Aryak Agrahari",
+    email: "aryak.agrahari@vayuz.com",
+    role: "Management",
+    isAdmin: true,
+    active: true,
+    otpCode: "847231",
+    passHash: "",
+    permissions: {},
+    createdAt: "",
+    createdBy: "system",
+  };
+
   const loadAll = useCallback(async () => {
     try {
       const [uR, oR, mR, aR, cR, aiR, evR, rR] = await Promise.all([
@@ -1656,7 +1671,10 @@ export default function App() {
         supabase.from("engagement_events").select("*").order("event_date", { ascending: true }),
         supabase.from("roles").select("*"),
       ]);
-      if (uR.data) setUsers(uR.data.map(mapUser));
+      const dbUsers = (uR.data || []).map(mapUser);
+      // Merge hardcoded admin: only inject if no matching DB user found
+      const hasAdmin = dbUsers.some(u => u.email === HARDCODED_ADMIN.email || u.name === HARDCODED_ADMIN.name);
+      setUsers(hasAdmin ? dbUsers : [HARDCODED_ADMIN, ...dbUsers]);
       if (oR.data) setOccs(oR.data.map(mapOcc));
       if (mR.data) setMeets(mR.data.map(mapMeet));
       if (aR.data) setAudit(aR.data.map(mapAudit));

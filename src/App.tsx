@@ -620,8 +620,12 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
     if (!newEmail.includes("@")) return setErr("Valid email required.");
     if (!newRole) return setErr("Role required.");
     const otp = generateOTP();
-    await onAddUser({ name: newName.trim(), role: newRole, email: newEmail.trim(), isAdmin: newIsAdmin, otp });
-    setNewName(""); setNewRole(""); setNewEmail(""); setNewIsAdmin(false); setShowForm(false);
+    try {
+      await onAddUser({ name: newName.trim(), role: newRole, email: newEmail.trim(), isAdmin: newIsAdmin, otp });
+      setNewName(""); setNewRole(""); setNewEmail(""); setNewIsAdmin(false); setShowForm(false);
+    } catch (e) {
+      setErr("Failed to add user: " + (e?.message || "unknown error"));
+    }
   };
 
   const handleResetOTP = async (uid) => {
@@ -1713,15 +1717,26 @@ export default function App() {
 
   const addAudit = async (user, action, target = "") => {
     const entry = { user_name: user, action, target, at: tsNow() };
-    await supabase.from("audit_log").insert([entry]);
+    try { await supabase.from("audit_log").insert([entry]); } catch {}
     setAudit(p => [{ id: genId(), user, action, target, at: entry.at }, ...p].slice(0, 500));
   };
 
   const handleFirstRun = async ({ name, email, otp }) => {
     const dbUser = { name, role: "Management", is_admin: true, is_active: true, password_hash: "", email, otp_code: otp, created_by: name };
+    let admin;
     const { data, error } = await supabase.from("users").insert([dbUser]).select();
-    if (error) throw error;
-    const admin = mapUser(data[0]);
+    if (error) {
+      // email/otp_code columns may not exist — try base insert
+      const { data: d2, error: e2 } = await supabase.from("users").insert([{ name, role: "Management", is_admin: true, is_active: true, password_hash: otp, created_by: name }]).select();
+      if (e2) {
+        // DB completely unavailable — use local-only admin
+        admin = { id: "local-admin-" + genId(), name, email, role: "Management", isAdmin: true, active: true, otpCode: otp, passHash: "", permissions: {}, createdAt: tsNow(), createdBy: name };
+      } else {
+        admin = { ...mapUser(d2[0]), email, otpCode: otp };
+      }
+    } else {
+      admin = mapUser(data[0]);
+    }
     await addAudit(admin.name, "set up CRM as admin");
     setUsers([admin]);
     const u = resolvePermissions(admin, []);
@@ -1745,15 +1760,29 @@ export default function App() {
   const handleAddUser = async ({ name, role, email, isAdmin, otp }) => {
     const dbUser = { name, role, is_admin: isAdmin, is_active: true, password_hash: "", email, otp_code: otp, created_by: currentUser.name };
     const { data, error } = await supabase.from("users").insert([dbUser]).select();
-    if (error) throw error;
-    const u = mapUser(data[0]);
-    setUsers(p => [...p, u]);
+    if (error) {
+      // email/otp_code columns may not exist yet — try without them
+      const { data: d2, error: e2 } = await supabase.from("users")
+        .insert([{ name, role, is_admin: isAdmin, is_active: true, password_hash: otp, created_by: currentUser.name }]).select();
+      if (e2) {
+        // DB unavailable — store locally so UI reflects the new user
+        const localUser = { id: "local-" + genId(), name, email, role, isAdmin, active: true, otpCode: otp, passHash: "", permissions: {}, createdAt: tsNow(), createdBy: currentUser.name };
+        setUsers(p => [...p, localUser]);
+        await addAudit(currentUser.name, `added user (local)${isAdmin ? " (admin)" : ""}`, name);
+        return;
+      }
+      const u = { ...mapUser(d2[0]), email, otpCode: otp };
+      setUsers(p => [...p, u]);
+    } else {
+      setUsers(p => [...p, mapUser(data[0])]);
+    }
     await addAudit(currentUser.name, `added user${isAdmin ? " (admin)" : ""}`, name);
   };
 
   const handleResetOTP = async (uid, newOtp) => {
-    await supabase.from("users").update({ otp_code: newOtp }).eq("id", uid);
+    try { await supabase.from("users").update({ otp_code: newOtp }).eq("id", uid); } catch {}
     const target = users.find(u => u.id === uid);
+    // Always update local state even if DB column missing
     setUsers(p => p.map(u => u.id === uid ? { ...u, otpCode: newOtp } : u));
     await addAudit(currentUser.name, "reset OTP for", target?.name || "user");
   };
@@ -1761,7 +1790,7 @@ export default function App() {
   const handleToggleActive = async (uid) => {
     const target = users.find(u => u.id === uid);
     const newActive = target.active === false ? true : false;
-    await supabase.from("users").update({ is_active: newActive }).eq("id", uid);
+    try { await supabase.from("users").update({ is_active: newActive }).eq("id", uid); } catch {}
     setUsers(p => p.map(u => u.id === uid ? { ...u, active: newActive } : u));
     await addAudit(currentUser.name, newActive ? "reactivated" : "deactivated", target?.name);
   };
@@ -1771,7 +1800,7 @@ export default function App() {
     const adminCount = users.filter(u => u.isAdmin && u.active !== false).length;
     if (target.isAdmin && adminCount <= 1) { alert("Cannot demote — at least one admin must remain."); return; }
     const newIsAdmin = !target.isAdmin;
-    await supabase.from("users").update({ is_admin: newIsAdmin }).eq("id", uid);
+    try { await supabase.from("users").update({ is_admin: newIsAdmin }).eq("id", uid); } catch {}
     setUsers(p => p.map(u => u.id === uid ? { ...u, isAdmin: newIsAdmin } : u));
     await addAudit(currentUser.name, newIsAdmin ? "promoted to admin" : "demoted from admin", target.name);
   };

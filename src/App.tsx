@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
-const SUPABASE_URL = "https://ebhaztndepodowsxfbmw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_UxEPSa9z0XzkFEFAstGtoA_sC9aufto";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://xgbcgeewbhhzhquibwbw.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_LyKxfonIYakpMHKziapVTA_fTu_0w2a";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────

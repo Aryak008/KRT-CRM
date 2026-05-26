@@ -1661,18 +1661,19 @@ export default function App() {
 
   const loadAll = useCallback(async () => {
     try {
+      // Fire all queries independently so one missing table doesn't block the rest
       const [uR, oR, mR, aR, cR, aiR, evR, rR] = await Promise.all([
-        supabase.from("users").select("*"),
-        supabase.from("occupiers").select("*"),
-        supabase.from("meetings").select("*"),
-        supabase.from("audit_log").select("*").order("at", { ascending: false }).limit(500),
-        supabase.from("key_contacts").select("*"),
-        supabase.from("action_items").select("*"),
-        supabase.from("engagement_events").select("*").order("event_date", { ascending: true }),
-        supabase.from("roles").select("*"),
+        supabase.from("users").select("*").then(r => r).catch(() => ({ data: null })),
+        supabase.from("occupiers").select("*").then(r => r).catch(() => ({ data: null })),
+        supabase.from("meetings").select("*").then(r => r).catch(() => ({ data: null })),
+        supabase.from("audit_log").select("*").order("at", { ascending: false }).limit(500).then(r => r).catch(() => ({ data: null })),
+        supabase.from("key_contacts").select("*").then(r => r).catch(() => ({ data: null })),
+        supabase.from("action_items").select("*").then(r => r).catch(() => ({ data: null })),
+        supabase.from("engagement_events").select("*").order("event_date", { ascending: true }).then(r => r).catch(() => ({ data: null })),
+        supabase.from("roles").select("*").then(r => r).catch(() => ({ data: null })),
       ]);
       const dbUsers = (uR.data || []).map(mapUser);
-      // Merge hardcoded admin: only inject if no matching DB user found
+      // Always inject hardcoded admin unless a DB user with same email/name exists
       const hasAdmin = dbUsers.some(u => u.email === HARDCODED_ADMIN.email || u.name === HARDCODED_ADMIN.name);
       setUsers(hasAdmin ? dbUsers : [HARDCODED_ADMIN, ...dbUsers]);
       if (oR.data) setOccs(oR.data.map(mapOcc));
@@ -1683,7 +1684,11 @@ export default function App() {
       if (evR.data) setEvents(evR.data.map(mapEvent));
       if (rR.data) setRoles(rR.data.map(mapRole));
       setLastSync(new Date());
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e) {
+      console.error(e);
+      // Even on total failure, ensure hardcoded admin is available
+      setUsers([HARDCODED_ADMIN]);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);

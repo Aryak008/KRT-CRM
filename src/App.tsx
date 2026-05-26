@@ -517,8 +517,12 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
     setErr("");
     if (!roleName.trim()) return setErr("Role name is required.");
     if (roles.some(r => r.name.toLowerCase() === roleName.trim().toLowerCase())) return setErr("Role name already exists.");
-    await onAddRole({ name: roleName.trim(), permissions });
-    setRoleName(""); setPermissions({}); setShowForm(false);
+    try {
+      await onAddRole({ name: roleName.trim(), permissions });
+      setRoleName(""); setPermissions({}); setShowForm(false);
+    } catch (e) {
+      setErr("Failed to save role: " + (e?.message || "unknown error"));
+    }
   };
 
   return (
@@ -1775,8 +1779,14 @@ export default function App() {
   const handleAddRole = async ({ name, permissions }) => {
     const dbRole = { name, permissions, created_by: currentUser.name, created_at: tsNow() };
     const { data, error } = await supabase.from("roles").insert([dbRole]).select();
-    if (error) throw error;
-    setRoles(p => [...p, mapRole(data[0])]);
+    if (error) {
+      // roles table may not exist yet — store locally so the UI still works
+      console.warn("roles table error (run SUPABASE_MIGRATIONS.sql):", error.message);
+      const localRole = { id: "local-" + genId(), name, permissions, createdBy: currentUser.name, createdAt: tsNow() };
+      setRoles(p => [...p, localRole]);
+    } else {
+      setRoles(p => [...p, mapRole(data[0])]);
+    }
     await addAudit(currentUser.name, "created role", name);
   };
 

@@ -2,6 +2,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
+import { useDispatch, useSelector } from "react-redux";
+import { fetchUsersThunk, createUserThunk, patchUserThunk } from "./redux/thunks/usersThunks";
+import { fetchOccupiersThunk, createOccupierThunk, updateOccupierThunk } from "./redux/thunks/occupiersThunks";
+import { fetchMeetingsThunk, createMeetingThunk, deleteMeetingThunk } from "./redux/thunks/meetingsThunks";
+import { fetchAuditThunk, createAuditEntryThunk } from "./redux/thunks/auditThunks";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://xgbcgeewbhhzhquibwbw.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_LyKxfonIYakpMHKziapVTA_fTu_0w2a";
@@ -1627,12 +1632,8 @@ function AnalyticsTab({ occs, meets }) {
 export default function App() {
   const [theme, setTheme] = useState("dark");
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem("krt_sidebar") !== "0"; } catch { return true; } });
-  const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
-  const [audit, setAudit] = useState([]);
-  const [occs, setOccs] = useState([]);
-  const [meets, setMeets] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [actionItems, setActionItems] = useState([]);
   const [events, setEvents] = useState([]);
@@ -1656,6 +1657,13 @@ export default function App() {
   const [filterMeetDept, setFilterMeetDept] = useState("");
   const [selectedOccIds, setSelectedOccIds] = useState(new Set());
 
+  // ── Redux ──────────────────────────────────────────────────────────────────
+  const dispatch = useDispatch();
+  const rawUsers = useSelector((s) => s.users.items);
+  const rawOccs  = useSelector((s) => s.occupiers.items);
+  const rawMeets = useSelector((s) => s.meetings.items);
+  const rawAudit = useSelector((s) => s.audit.items);
+
   const toggleSidebar = () => setSidebarOpen(p => { const v = !p; try { localStorage.setItem("krt_sidebar", v ? "1" : "0"); } catch {} return v; });
 
   // Hardcoded fallback admin — always available even if DB has no users yet
@@ -1673,26 +1681,32 @@ export default function App() {
     createdBy: "system",
   };
 
+  // Map raw API (snake_case) to UI (camelCase) format
+  const users = useMemo(() => {
+    const mapped = rawUsers.map(mapUser);
+    const hasAdmin = mapped.some(u => u.name === HARDCODED_ADMIN.name);
+    return hasAdmin ? mapped : [HARDCODED_ADMIN, ...mapped];
+  }, [rawUsers]);
+  const occs  = useMemo(() => rawOccs.map(mapOcc),   [rawOccs]);
+  const meets = useMemo(() => rawMeets.map(mapMeet),  [rawMeets]);
+  const audit = useMemo(() => rawAudit.map(mapAudit), [rawAudit]);
+
   const loadAll = useCallback(async () => {
     try {
-      // Fire all queries independently so one missing table doesn't block the rest
-      const [uR, oR, mR, aR, cR, aiR, evR, rR] = await Promise.all([
-        supabase.from("users").select("*").then(r => r).catch(() => ({ data: null })),
-        supabase.from("occupiers").select("*").then(r => r).catch(() => ({ data: null })),
-        supabase.from("meetings").select("*").then(r => r).catch(() => ({ data: null })),
-        supabase.from("audit_log").select("*").order("at", { ascending: false }).limit(500).then(r => r).catch(() => ({ data: null })),
+      // API-covered entities → Redux thunks (hit REST backend)
+      await Promise.all([
+        dispatch(fetchUsersThunk()),
+        dispatch(fetchOccupiersThunk()),
+        dispatch(fetchMeetingsThunk()),
+        dispatch(fetchAuditThunk()),
+      ]);
+      // Non-API entities → Supabase (contacts, action items, events, roles)
+      const [cR, aiR, evR, rR] = await Promise.all([
         supabase.from("key_contacts").select("*").then(r => r).catch(() => ({ data: null })),
         supabase.from("action_items").select("*").then(r => r).catch(() => ({ data: null })),
         supabase.from("engagement_events").select("*").order("event_date", { ascending: true }).then(r => r).catch(() => ({ data: null })),
         supabase.from("roles").select("*").then(r => r).catch(() => ({ data: null })),
       ]);
-      const dbUsers = (uR.data || []).map(mapUser);
-      // Always inject hardcoded admin unless a DB user with same email/name exists
-      const hasAdmin = dbUsers.some(u => u.email === HARDCODED_ADMIN.email || u.name === HARDCODED_ADMIN.name);
-      setUsers(hasAdmin ? dbUsers : [HARDCODED_ADMIN, ...dbUsers]);
-      if (oR.data) setOccs(oR.data.map(mapOcc));
-      if (mR.data) setMeets(mR.data.map(mapMeet));
-      if (aR.data) setAudit(aR.data.map(mapAudit));
       if (cR.data) setContacts(cR.data.map(mapContact));
       if (aiR.data) setActionItems(aiR.data.map(mapActionItem));
       if (evR.data) setEvents(evR.data.map(mapEvent));
@@ -1700,10 +1714,8 @@ export default function App() {
       setLastSync(new Date());
     } catch (e) {
       console.error(e);
-      // Even on total failure, ensure hardcoded admin is available
-      setUsers([HARDCODED_ADMIN]);
     } finally { setLoading(false); }
-  }, []);
+  }, [dispatch]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => {
@@ -1715,84 +1727,64 @@ export default function App() {
   }, [users.length, roles.length]);
   useEffect(() => { const iv = setInterval(loadAll, 30000); return () => clearInterval(iv); }, [loadAll]);
 
-  const addAudit = async (user, action, target = "") => {
-    const entry = { user_name: user, action, target, at: tsNow() };
-    try { await supabase.from("audit_log").insert([entry]); } catch {}
-    setAudit(p => [{ id: genId(), user, action, target, at: entry.at }, ...p].slice(0, 500));
+  const addAudit = (user, action, target = "") => {
+    dispatch(createAuditEntryThunk({ user_name: user, action, target: target || undefined }));
   };
 
   const handleFirstRun = async ({ name, email, otp }) => {
-    const dbUser = { name, role: "Management", is_admin: true, is_active: true, password_hash: "", email, otp_code: otp, created_by: name };
+    const hashedOtp = await hashCode(otp);
+    const result = await dispatch(createUserThunk({
+      name, role: "Management", is_admin: true, is_active: true,
+      password_hash: hashedOtp, created_by: name,
+    }));
     let admin;
-    const { data, error } = await supabase.from("users").insert([dbUser]).select();
-    if (error) {
-      // email/otp_code columns may not exist — try base insert
-      const { data: d2, error: e2 } = await supabase.from("users").insert([{ name, role: "Management", is_admin: true, is_active: true, password_hash: otp, created_by: name }]).select();
-      if (e2) {
-        // DB completely unavailable — use local-only admin
-        admin = { id: "local-admin-" + genId(), name, email, role: "Management", isAdmin: true, active: true, otpCode: otp, passHash: "", permissions: {}, createdAt: tsNow(), createdBy: name };
-      } else {
-        admin = { ...mapUser(d2[0]), email, otpCode: otp };
-      }
+    if (createUserThunk.fulfilled.match(result) && result.payload?.[0]) {
+      admin = mapUser(result.payload[0]);
     } else {
-      admin = mapUser(data[0]);
+      admin = { id: "local-admin-" + genId(), name, email, role: "Management", isAdmin: true, active: true, otpCode: otp, passHash: hashedOtp, permissions: {}, createdAt: tsNow(), createdBy: name };
     }
-    await addAudit(admin.name, "set up CRM as admin");
-    setUsers([admin]);
+    addAudit(admin.name, "set up CRM as admin");
     const u = resolvePermissions(admin, []);
     setCurrentUser(u);
     try { localStorage.setItem(SK_SESSION, JSON.stringify({ id: admin.id })); } catch {}
   };
 
-  const handleLogin = async (user) => {
+  const handleLogin = (user) => {
     const u = resolvePermissions(user, roles);
     setCurrentUser(u);
-    await addAudit(user.name, "signed in");
+    addAudit(user.name, "signed in");
     try { localStorage.setItem(SK_SESSION, JSON.stringify({ id: user.id })); } catch {}
   };
 
-  const handleLogout = async () => {
-    if (currentUser) await addAudit(currentUser.name, "signed out");
+  const handleLogout = () => {
+    if (currentUser) addAudit(currentUser.name, "signed out");
     setCurrentUser(null);
     try { localStorage.removeItem(SK_SESSION); } catch {}
   };
 
-  const handleAddUser = async ({ name, role, email, isAdmin, otp }) => {
-    const dbUser = { name, role, is_admin: isAdmin, is_active: true, password_hash: "", email, otp_code: otp, created_by: currentUser.name };
-    const { data, error } = await supabase.from("users").insert([dbUser]).select();
-    if (error) {
-      // email/otp_code columns may not exist yet — try without them
-      const { data: d2, error: e2 } = await supabase.from("users")
-        .insert([{ name, role, is_admin: isAdmin, is_active: true, password_hash: otp, created_by: currentUser.name }]).select();
-      if (e2) {
-        // DB unavailable — store locally so UI reflects the new user
-        const localUser = { id: "local-" + genId(), name, email, role, isAdmin, active: true, otpCode: otp, passHash: "", permissions: {}, createdAt: tsNow(), createdBy: currentUser.name };
-        setUsers(p => [...p, localUser]);
-        await addAudit(currentUser.name, `added user (local)${isAdmin ? " (admin)" : ""}`, name);
-        return;
-      }
-      const u = { ...mapUser(d2[0]), email, otpCode: otp };
-      setUsers(p => [...p, u]);
-    } else {
-      setUsers(p => [...p, mapUser(data[0])]);
+  const handleAddUser = async ({ name, role, isAdmin, otp }) => {
+    const hashedOtp = await hashCode(otp);
+    const result = await dispatch(createUserThunk({
+      name, role, is_admin: isAdmin, is_active: true,
+      password_hash: hashedOtp, created_by: currentUser.name,
+    }));
+    if (createUserThunk.fulfilled.match(result)) {
+      addAudit(currentUser.name, `added user${isAdmin ? " (admin)" : ""}`, name);
     }
-    await addAudit(currentUser.name, `added user${isAdmin ? " (admin)" : ""}`, name);
   };
 
   const handleResetOTP = async (uid, newOtp) => {
-    try { await supabase.from("users").update({ otp_code: newOtp }).eq("id", uid); } catch {}
     const target = users.find(u => u.id === uid);
-    // Always update local state even if DB column missing
-    setUsers(p => p.map(u => u.id === uid ? { ...u, otpCode: newOtp } : u));
-    await addAudit(currentUser.name, "reset OTP for", target?.name || "user");
+    const hashedOtp = await hashCode(newOtp);
+    await dispatch(patchUserThunk({ id: uid, password_hash: hashedOtp }));
+    addAudit(currentUser.name, "reset OTP for", target?.name || "user");
   };
 
   const handleToggleActive = async (uid) => {
     const target = users.find(u => u.id === uid);
     const newActive = target.active === false ? true : false;
-    try { await supabase.from("users").update({ is_active: newActive }).eq("id", uid); } catch {}
-    setUsers(p => p.map(u => u.id === uid ? { ...u, active: newActive } : u));
-    await addAudit(currentUser.name, newActive ? "reactivated" : "deactivated", target?.name);
+    await dispatch(patchUserThunk({ id: uid, is_active: newActive }));
+    addAudit(currentUser.name, newActive ? "reactivated" : "deactivated", target?.name);
   };
 
   const handleToggleAdmin = async (uid) => {
@@ -1800,57 +1792,41 @@ export default function App() {
     const adminCount = users.filter(u => u.isAdmin && u.active !== false).length;
     if (target.isAdmin && adminCount <= 1) { alert("Cannot demote — at least one admin must remain."); return; }
     const newIsAdmin = !target.isAdmin;
-    try { await supabase.from("users").update({ is_admin: newIsAdmin }).eq("id", uid); } catch {}
-    setUsers(p => p.map(u => u.id === uid ? { ...u, isAdmin: newIsAdmin } : u));
-    await addAudit(currentUser.name, newIsAdmin ? "promoted to admin" : "demoted from admin", target.name);
-  };
-
-  const handleAddRole = async ({ name, permissions }) => {
-    const dbRole = { name, permissions, created_by: currentUser.name, created_at: tsNow() };
-    const { data, error } = await supabase.from("roles").insert([dbRole]).select();
-    if (error) {
-      // roles table may not exist yet — store locally so the UI still works
-      console.warn("roles table error (run SUPABASE_MIGRATIONS.sql):", error.message);
-      const localRole = { id: "local-" + genId(), name, permissions, createdBy: currentUser.name, createdAt: tsNow() };
-      setRoles(p => [...p, localRole]);
-    } else {
-      setRoles(p => [...p, mapRole(data[0])]);
-    }
-    await addAudit(currentUser.name, "created role", name);
-  };
-
-  const handleDeleteRole = async (id) => {
-    const role = roles.find(r => r.id === id);
-    await supabase.from("roles").delete().eq("id", id);
-    setRoles(p => p.filter(r => r.id !== id));
-    await addAudit(currentUser.name, "deleted role", role?.name || "");
+    await dispatch(patchUserThunk({ id: uid, is_admin: newIsAdmin }));
+    addAudit(currentUser.name, newIsAdmin ? "promoted to admin" : "demoted from admin", target.name);
   };
 
   const handleSaveOcc = async (occ) => {
     if (isReadOnly(currentUser)) return;
     const existing = occs.findIndex(o => o.id === occ.id);
-    const now = tsNow();
-    const dbOcc = { name: occ.name, tier: occ.tier, depth: occ.depth, sector: occ.sector, city: occ.city, sqft: occ.sqft ? parseInt(occ.sqft) : null, lease_expiry: occ.leaseExpiry, risk: occ.risk, owner: occ.owner, notes: occ.notes, gcc_classification: occ.gccClassification, asset: occ.asset, building: occ.building, unit_floor: occ.unitFloor, renewal_status: occ.renewalStatus, relationship_tenure: occ.relationshipTenure || null };
+    const payload = {
+      name: occ.name, tier: occ.tier, depth: occ.depth || undefined,
+      sector: occ.sector || undefined, city: occ.city || undefined,
+      sqft: occ.sqft ? parseInt(occ.sqft) : undefined,
+      lease_expiry: occ.leaseExpiry || undefined,
+      risk: occ.risk, owner: occ.owner || undefined, notes: occ.notes || undefined,
+    };
     if (existing >= 0) {
-      dbOcc.updated_by = currentUser.name; dbOcc.updated_at = now;
-      const { data } = await supabase.from("occupiers").update(dbOcc).eq("id", occ.id).select();
-      setOccs(p => p.map(o => o.id === occ.id ? mapOcc(data[0]) : o));
-      await addAudit(currentUser.name, "edited occupier", occ.name);
+      const result = await dispatch(updateOccupierThunk({ id: occ.id, ...payload, updated_by: currentUser.name }));
+      if (updateOccupierThunk.fulfilled.match(result)) {
+        addAudit(currentUser.name, "edited occupier", occ.name);
+      }
     } else {
-      dbOcc.created_by = currentUser.name; dbOcc.created_at = now;
-      const { data } = await supabase.from("occupiers").insert([dbOcc]).select();
-      const created = mapOcc(data[0]);
-      setOccs(p => [...p, created]); setSelectedOccId(created.id);
-      await addAudit(currentUser.name, "added occupier", occ.name);
-      setTab("occupiers");
+      const result = await dispatch(createOccupierThunk({ ...payload, created_by: currentUser.name }));
+      if (createOccupierThunk.fulfilled.match(result)) {
+        const created = result.payload?.[0];
+        if (created?.id) setSelectedOccId(created.id);
+        addAudit(currentUser.name, "added occupier", occ.name);
+        setTab("occupiers");
+      }
     }
     setShowOccForm(false); setEditOcc(null);
   };
 
   const handleBulkUploaded = async () => {
     setShowBulkUpload(false);
-    await loadAll();
-    await addAudit(currentUser.name, "bulk uploaded occupiers");
+    await dispatch(fetchOccupiersThunk());
+    addAudit(currentUser.name, "bulk uploaded occupiers");
   };
 
   const handleDeleteSelectedOccs = async () => {
@@ -1860,10 +1836,10 @@ export default function App() {
     for (const id of ids) {
       const occ = occs.find(o => o.id === id); if (!occ) continue;
       await supabase.from("occupiers").delete().eq("id", id);
-      await addAudit(currentUser.name, "deleted occupier", occ.name);
+      addAudit(currentUser.name, "deleted occupier", occ.name);
     }
-    setOccs(p => p.filter(o => !ids.includes(o.id)));
-    setMeets(p => p.filter(m => !ids.includes(m.occupierId)));
+    await dispatch(fetchOccupiersThunk());
+    await dispatch(fetchMeetingsThunk());
     setContacts(p => p.filter(c => !ids.includes(c.occupierId)));
     setSelectedOccIds(new Set());
   };
@@ -1872,22 +1848,32 @@ export default function App() {
     if (isReadOnly(currentUser, "meetings")) return;
     const occName = occs.find(o => o.id === m.occupierId)?.name || "Unknown";
     const isEdit = meets.some(x => x.id === m.id);
-    const dbMeet = { occupier_id: m.occupierId, meeting_date: m.date, meeting_type: m.type, attendees: m.attendees, notes: m.notes, actions: m.actions, outcome: m.outcome, department: m.department, follow_up_date: m.followUpDate || null, relationship_owner: m.relationshipOwner };
     if (isEdit) {
+      // Meeting PATCH not in REST API — keep Supabase, then re-sync
+      const dbMeet = { occupier_id: m.occupierId, meeting_date: m.date, meeting_type: m.type, attendees: m.attendees, notes: m.notes, actions: m.actions, outcome: m.outcome, department: m.department, follow_up_date: m.followUpDate || null, relationship_owner: m.relationshipOwner };
       await supabase.from("meetings").update(dbMeet).eq("id", m.id);
-      setMeets(p => p.map(x => x.id === m.id ? { ...x, ...m } : x));
-      await addAudit(currentUser.name, "edited meeting for", occName);
+      await dispatch(fetchMeetingsThunk());
+      addAudit(currentUser.name, "edited meeting for", occName);
     } else {
-      dbMeet.created_by = currentUser.name; dbMeet.created_at = tsNow();
-      const { data } = await supabase.from("meetings").insert([dbMeet]).select();
-      const created = mapMeet(data[0]);
-      setMeets(p => [...p, created]);
-      if (m.newActionItems?.length > 0) {
-        const aiRows = m.newActionItems.map(ai => ({ meeting_id: created.id, description: ai.description, owner: ai.owner, due_date: ai.dueDate || null, status: ai.status, created_at: tsNow(), updated_at: tsNow() }));
-        const { data: aiData } = await supabase.from("action_items").insert(aiRows).select();
-        if (aiData) setActionItems(p => [...p, ...aiData.map(mapActionItem)]);
+      const result = await dispatch(createMeetingThunk({
+        occupier_id: m.occupierId,
+        notes: m.notes,
+        meeting_date: m.date || undefined,
+        meeting_type: m.type || undefined,
+        attendees: m.attendees || undefined,
+        actions: m.actions || undefined,
+        outcome: m.outcome || undefined,
+        created_by: currentUser.name,
+      }));
+      if (createMeetingThunk.fulfilled.match(result)) {
+        const created = result.payload?.[0];
+        if (created?.id && m.newActionItems?.length > 0) {
+          const aiRows = m.newActionItems.map(ai => ({ meeting_id: created.id, description: ai.description, owner: ai.owner, due_date: ai.dueDate || null, status: ai.status, created_at: tsNow(), updated_at: tsNow() }));
+          const { data: aiData } = await supabase.from("action_items").insert(aiRows).select();
+          if (aiData) setActionItems(p => [...p, ...aiData.map(mapActionItem)]);
+        }
+        addAudit(currentUser.name, "logged meeting for", occName);
       }
-      await addAudit(currentUser.name, "logged meeting for", occName);
     }
     setShowMeetForm(false); setPreOccId(null); setEditMeet(null);
   };
@@ -1896,11 +1882,10 @@ export default function App() {
     if (isReadOnly(currentUser, "meetings")) return;
     const m = meets.find(x => x.id === id);
     const occName = occs.find(o => o.id === m?.occupierId)?.name || "Unknown";
-    await supabase.from("meetings").delete().eq("id", id);
+    await dispatch(deleteMeetingThunk(id));
     await supabase.from("action_items").delete().eq("meeting_id", id);
-    setMeets(p => p.filter(x => x.id !== id));
     setActionItems(p => p.filter(a => a.meetingId !== id));
-    await addAudit(currentUser.name, "deleted meeting from", occName);
+    addAudit(currentUser.name, "deleted meeting from", occName);
   };
 
   const handleAddContact = async (contact) => {
@@ -1908,7 +1893,7 @@ export default function App() {
     const occ = occs.find(o => o.id === contact.occupierId);
     const dbContact = { occupier_id: contact.occupierId, name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary, created_by: currentUser.name, created_at: tsNow() };
     const { data } = await supabase.from("key_contacts").insert([dbContact]).select();
-    if (data) { setContacts(p => [...p, mapContact(data[0])]); await addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || "")); }
+    if (data) { setContacts(p => [...p, mapContact(data[0])]); addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || "")); }
   };
 
   const handleDeleteContact = async (id) => {
@@ -1916,21 +1901,21 @@ export default function App() {
     const c = contacts.find(x => x.id === id);
     await supabase.from("key_contacts").delete().eq("id", id);
     setContacts(p => p.filter(x => x.id !== id));
-    await addAudit(currentUser.name, "deleted contact", c?.name || "");
+    addAudit(currentUser.name, "deleted contact", c?.name || "");
   };
 
   const handleEditContact = async (contact) => {
     if (isReadOnly(currentUser)) return;
     await supabase.from("key_contacts").update({ name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary }).eq("id", contact.id);
     setContacts(p => p.map(c => c.id === contact.id ? { ...c, ...contact } : c));
-    await addAudit(currentUser.name, "edited contact", contact.name);
+    addAudit(currentUser.name, "edited contact", contact.name);
   };
 
   const handleAddEvent = async (ev) => {
     if (isReadOnly(currentUser, "calendar")) return;
     const dbEv = { title: ev.title, occupier_id: ev.occupierId || null, event_date: ev.eventDate, event_type: ev.eventType, recurrence: ev.recurrence, reminder_days: ev.reminderDays, notes: ev.notes, created_by: currentUser.name, created_at: tsNow() };
     const { data } = await supabase.from("engagement_events").insert([dbEv]).select();
-    if (data) { setEvents(p => [...p, mapEvent(data[0])].sort((a, b) => a.eventDate.localeCompare(b.eventDate))); await addAudit(currentUser.name, "added event", ev.title); }
+    if (data) { setEvents(p => [...p, mapEvent(data[0])].sort((a, b) => a.eventDate.localeCompare(b.eventDate))); addAudit(currentUser.name, "added event", ev.title); }
   };
 
   const handleDeleteEvent = async (id) => {
@@ -1938,7 +1923,7 @@ export default function App() {
     const ev = events.find(x => x.id === id);
     await supabase.from("engagement_events").delete().eq("id", id);
     setEvents(p => p.filter(x => x.id !== id));
-    await addAudit(currentUser.name, "deleted event", ev?.title || "");
+    addAudit(currentUser.name, "deleted event", ev?.title || "");
   };
 
   const handleDeleteOcc = async (id) => {
@@ -1946,15 +1931,38 @@ export default function App() {
     const occ = occs.find(o => o.id === id); if (!occ) return;
     const occMeetIds = meets.filter(m => m.occupierId === id).map(m => m.id);
     await supabase.from("occupiers").delete().eq("id", id);
-    setOccs(p => p.filter(o => o.id !== id)); setMeets(p => p.filter(m => m.occupierId !== id)); setContacts(p => p.filter(c => c.occupierId !== id)); setActionItems(p => p.filter(a => !occMeetIds.includes(a.meetingId)));
+    await dispatch(fetchOccupiersThunk());
+    await dispatch(fetchMeetingsThunk());
+    setContacts(p => p.filter(c => c.occupierId !== id));
+    setActionItems(p => p.filter(a => !occMeetIds.includes(a.meetingId)));
     setSelectedOccId(null); setTab("occupiers");
-    await addAudit(currentUser.name, "deleted occupier", occ.name);
+    addAudit(currentUser.name, "deleted occupier", occ.name);
   };
 
   const handleUpdateActionItem = async (id, newStatus) => {
     if (isReadOnly(currentUser, "tasks")) return;
     await supabase.from("action_items").update({ status: newStatus, updated_at: tsNow() }).eq("id", id);
     setActionItems(p => p.map(a => a.id === id ? { ...a, status: newStatus } : a));
+  };
+
+  const handleAddRole = async ({ name, permissions }) => {
+    const dbRole = { name, permissions, created_by: currentUser.name, created_at: tsNow() };
+    const { data, error } = await supabase.from("roles").insert([dbRole]).select();
+    if (error) {
+      console.warn("roles table error (run SUPABASE_MIGRATIONS.sql):", error.message);
+      const localRole = { id: "local-" + genId(), name, permissions, createdBy: currentUser.name, createdAt: tsNow() };
+      setRoles(p => [...p, localRole]);
+    } else {
+      setRoles(p => [...p, mapRole(data[0])]);
+    }
+    addAudit(currentUser.name, "created role", name);
+  };
+
+  const handleDeleteRole = async (id) => {
+    const role = roles.find(r => r.id === id);
+    await supabase.from("roles").delete().eq("id", id);
+    setRoles(p => p.filter(r => r.id !== id));
+    addAudit(currentUser.name, "deleted role", role?.name || "");
   };
 
   const filteredOccs = useMemo(() => occs.filter(o => {

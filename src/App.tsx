@@ -797,7 +797,7 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
 
   const downloadSample = (fmt) => {
     const labels = BULK_COLS.map(c => c.label);
-    const sample = ["Sample Corp", "Gold", "IT/ITES", "Bengaluru", "GCC", "Cessna Business Park", "Block A", "Floor 3", "50000", "2027-06", "Low", "Good", "Active", "2020-01-15", "Manager Name", "Sample notes"];
+    const sample = ["Sample Corp", "Gold", "IT/ITES", "Bengaluru", "GCC", "Cessna Business Park", "Block A", "Floor 3", "50000", "01-06-2027", "Low", "Good", "Active", "2020-01-15", "Manager Name", "Sample notes"];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([labels, sample]);
     ws["!cols"] = labels.map(h => ({ wch: Math.max(h.length + 2, 14) }));
@@ -847,6 +847,18 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
             if (!converted) errs.push(`Row ${rowNum}: Lease expiry "${r.lease_expiry}" not recognised — expected DD-MM-YYYY or YYYY-MM-DD, will be skipped`);
             r.lease_expiry = converted || "";
           }
+          if (r.relationship_tenure && !/^\d{4}-\d{2}-\d{2}$/.test(r.relationship_tenure)) {
+            errs.push(`Row ${rowNum}: Relationship tenure "${r.relationship_tenure}" must be YYYY-MM-DD, will be skipped`);
+            r.relationship_tenure = "";
+          }
+          if (r.gcc_classification && !GCC_OPTIONS.includes(r.gcc_classification)) {
+            errs.push(`Row ${rowNum}: GCC classification "${r.gcc_classification}" — expected GCC or Non-GCC, will be skipped`);
+            r.gcc_classification = "";
+          }
+          if (r.renewal_status && !RENEWAL_STATUSES.includes(r.renewal_status)) {
+            errs.push(`Row ${rowNum}: Renewal status "${r.renewal_status}" — expected one of: ${RENEWAL_STATUSES.join(", ")}, will be skipped`);
+            r.renewal_status = "";
+          }
           return r;
         }).filter(r => r.name);
         setRows(parsed); setErrors(errs);
@@ -869,6 +881,12 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
         risk: r.risk || null,
         owner: r.owner || currentUser.name,
         notes: r.notes || null,
+        gcc_classification: r.gcc_classification || null,
+        asset: r.asset || null,
+        building: r.building || null,
+        unit_floor: r.unit_floor || null,
+        renewal_status: r.renewal_status || null,
+        relationship_tenure: r.relationship_tenure || null,
         created_by: currentUser.name,
       }));
       const res = await api.post("/occupiers/bulk", payload);

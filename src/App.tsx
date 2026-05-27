@@ -2,11 +2,15 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchUsersThunk, createUserThunk, patchUserThunk } from "./redux/thunks/usersThunks";
 import { fetchOccupiersThunk, createOccupierThunk, updateOccupierThunk } from "./redux/thunks/occupiersThunks";
 import { fetchMeetingsThunk, createMeetingThunk, deleteMeetingThunk } from "./redux/thunks/meetingsThunks";
 import { fetchAuditThunk, createAuditEntryThunk } from "./redux/thunks/auditThunks";
+import toast from "react-hot-toast";
+import api from "./utils/api";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://xgbcgeewbhhzhquibwbw.supabase.co";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_LyKxfonIYakpMHKziapVTA_fTu_0w2a";
@@ -57,7 +61,7 @@ const SECTORS = [
   "Trade Economic Body of Korea","Warehouse","Wellness"
 ];
 
-const CITIES = ["Bengaluru","Hyderabad","Mumbai","Chennai","Gurugram","GIFT City","Solar Assets","Other"];
+const CITIES = ["Bengaluru","Hyderabad","Mumbai","Chennai","Gurugram","GIFT City"];
 
 const CITY_ASSETS = {
   "Hyderabad": ["Knowledge City","Knowledge Park","Knowledge Capital"],
@@ -66,8 +70,6 @@ const CITY_ASSETS = {
   "Chennai": ["Kosmo One"],
   "GIFT City": ["Fintech One"],
   "Gurugram": ["One Qube"],
-  "Solar Assets": [],
-  "Other": [],
 };
 
 const PERMISSION_MODULES = [
@@ -91,7 +93,7 @@ const BULK_COLS = [
   { key: "building", label: "Building Name" },
   { key: "unit_floor", label: "Unit & Floor" },
   { key: "sqft", label: "Area (sq ft)" },
-  { key: "lease_expiry", label: "Lease Expiry (YYYY-MM)" },
+  { key: "lease_expiry", label: "Lease Expiry (DD-MM-YYYY)" },
   { key: "risk", label: "Risk (Low/Medium/High)" },
   { key: "depth", label: "Depth (Average/Good/Very Good/Excellent)" },
   { key: "renewal_status", label: "Renewal Status" },
@@ -144,8 +146,36 @@ function fmtDateTime(s) {
 }
 function leaseMonths(exp) {
   if (!exp) return null;
-  const d = new Date(exp + "-01");
+  const [day, month, year] = String(exp).split("-");
+  const d = (day && month && year) ? new Date(`${year}-${month}-${day}`) : new Date(exp);
   return Math.round((d - new Date()) / (1000 * 60 * 60 * 24 * 30));
+}
+function normalizeLeaseDate(v) {
+  if (!v) return "";
+  if (/^\d{2}-\d{2}-\d{4}$/.test(v)) return v;
+  if (/^\d{4}-\d{2}$/.test(v)) {
+    const [y, m] = v.split("-");
+    return `01-${m}-${y}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, m, d] = v.split("-");
+    return `${d}-${m}-${y}`;
+  }
+  return v;
+}
+function parseDdMmYyyy(v) {
+  if (!v || !/^\d{2}-\d{2}-\d{4}$/.test(v)) return null;
+  const [dd, mm, yyyy] = v.split("-").map(Number);
+  const d = new Date(yyyy, mm - 1, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm - 1 || d.getDate() !== dd) return null;
+  return d;
+}
+function formatDdMmYyyy(d) {
+  if (!d) return "";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
 }
 function initials(name) { return name.trim().split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase(); }
 function avatarColor(name) {
@@ -205,6 +235,7 @@ const ThemeStyles = () => (
       --stat-bg: #FFFFFF;
       --text-muted: #467886;
       --text-strong: #0E2841;
+      --icon-muted: #5f738a;
       --btn-bg: #F0F4F8;
       --input-bg: #FFFFFF;
       --input-border: #D0D8E8;
@@ -251,6 +282,10 @@ const S = {
   btnTeal: { background: "linear-gradient(135deg,#156082,#0d4a6b)", color: "#fff", border: "none", boxShadow: "0 4px 14px rgba(21,96,130,0.3)" },
   btnSm: { padding: "6px 13px", fontSize: 12 },
   btnDanger: { color: "#fca5a5", borderColor: "rgba(248,113,113,0.2)", background: "rgba(248,113,113,0.06)" },
+  toolbarControl: { height: 40, minHeight: 40, boxSizing: "border-box" },
+  toolbarInput: { height: 40, minHeight: 40, lineHeight: "40px", paddingTop: 0, paddingBottom: 0, boxSizing: "border-box" },
+  toolbarSelect: { height: 40, minHeight: 40, paddingTop: 0, paddingBottom: 0, boxSizing: "border-box" },
+  toolbarBtn: { height: 40, minHeight: 40, paddingTop: 0, paddingBottom: 0, display: "inline-flex", alignItems: "center", boxSizing: "border-box" },
   input: { width: "100%", padding: "11px 14px", fontSize: 14, border: "1px solid var(--input-border)", borderRadius: 9, background: "var(--input-bg)", color: "var(--text-strong)", fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color .2s" },
   textarea: { width: "100%", padding: "11px 14px", fontSize: 14, border: "1px solid var(--input-border)", borderRadius: 9, background: "var(--input-bg)", color: "var(--text-strong)", fontFamily: "inherit", outline: "none", resize: "vertical", minHeight: 100, lineHeight: 1.6, boxSizing: "border-box" },
   select: { width: "100%", padding: "11px 14px", fontSize: 14, border: "1px solid var(--input-border)", borderRadius: 9, background: "var(--input-bg)", color: "var(--text-strong)", fontFamily: "inherit", outline: "none", boxSizing: "border-box" },
@@ -612,7 +647,7 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const [newDepartment, setNewDepartment] = useState("");
   const [err, setErr] = useState("");
   const [resetting, setResetting] = useState(null);
 
@@ -624,10 +659,11 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
     if (users.some(u => u.name.toLowerCase() === newName.trim().toLowerCase())) return setErr("Name already exists.");
     if (!newEmail.includes("@")) return setErr("Valid email required.");
     if (!newRole) return setErr("Role required.");
+    if (!newDepartment) return setErr("Department required.");
     const otp = generateOTP();
     try {
-      await onAddUser({ name: newName.trim(), role: newRole, email: newEmail.trim(), isAdmin: newIsAdmin, otp });
-      setNewName(""); setNewRole(""); setNewEmail(""); setNewIsAdmin(false); setShowForm(false);
+      await onAddUser({ name: newName.trim(), role: newRole, department: newDepartment, email: newEmail.trim(), isAdmin: false, otp });
+      setNewName(""); setNewRole(""); setNewEmail(""); setNewDepartment(""); setShowForm(false);
     } catch (e) {
       setErr("Failed to add user: " + (e?.message || "unknown error"));
     }
@@ -712,11 +748,11 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
                 {roleOptions.map(r => <option key={r}>{r}</option>)}
               </Select>
             </div>
-            <div style={{ ...S.formGroup, marginBottom: 24 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-                <input type="checkbox" checked={newIsAdmin} onChange={e => setNewIsAdmin(e.target.checked)} />
-                Grant admin privileges
-              </label>
+            <div style={S.formGroup}><label style={S.label}>Department *</label>
+              <Select value={newDepartment} onChange={e => setNewDepartment(e.target.value)}>
+                <option value="">Select department...</option>
+                {DEPARTMENTS.filter(d => d !== "Other").map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
             </div>
             <div style={{ ...S.alertWarn, fontSize: 12 }}><Ic n="key" size={13} /><div>A one-time OTP will be generated and visible in the user's profile for you to communicate to them.</div></div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -769,6 +805,14 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
     XLSX.writeFile(wb, fmt === "xlsx" ? "occupier_template.xlsx" : "occupier_template.csv", fmt === "csv" ? { bookType: "csv" } : {});
   };
 
+  const toISODate = (val) => {
+    if (!val) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const ddmmyyyy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(val);
+    if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+    return null;
+  };
+
   const handleFile = (f) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -780,10 +824,29 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
         const parsed = raw.map((row, idx) => {
           const r = {};
           BULK_COLS.forEach(c => { r[c.key] = String(row[c.label] || row[c.key] || "").trim(); });
-          if (!r.name) errs.push(`Row ${idx + 2}: Name is required`);
-          if (!["Platinum", "Gold", "Silver"].includes(r.tier)) r.tier = "Gold";
-          if (!["Low", "Medium", "High"].includes(r.risk)) r.risk = "Low";
-          if (!DEPTHS.includes(r.depth)) r.depth = "Good";
+          const rowNum = idx + 2;
+          if (!r.name) errs.push(`Row ${rowNum}: Name is required`);
+          if (r.tier && !TIERS.includes(r.tier)) {
+            errs.push(`Row ${rowNum}: Invalid tier "${r.tier}" — defaulted to Gold`);
+            r.tier = "Gold";
+          } else if (!r.tier) { r.tier = "Gold"; }
+          if (r.risk && !RISK.includes(r.risk)) {
+            errs.push(`Row ${rowNum}: Invalid risk "${r.risk}" — defaulted to Low`);
+            r.risk = "Low";
+          } else if (!r.risk) { r.risk = "Low"; }
+          if (r.depth && !DEPTHS.includes(r.depth)) {
+            errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — defaulted to Good`);
+            r.depth = "Good";
+          } else if (!r.depth) { r.depth = "Good"; }
+          if (r.sqft && isNaN(parseInt(r.sqft))) {
+            errs.push(`Row ${rowNum}: sqft "${r.sqft}" is not a number — will be skipped`);
+            r.sqft = "";
+          }
+          if (r.lease_expiry) {
+            const converted = toISODate(r.lease_expiry);
+            if (!converted) errs.push(`Row ${rowNum}: Lease expiry "${r.lease_expiry}" not recognised — expected DD-MM-YYYY or YYYY-MM-DD, will be skipped`);
+            r.lease_expiry = converted || "";
+          }
           return r;
         }).filter(r => r.name);
         setRows(parsed); setErrors(errs);
@@ -794,24 +857,38 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
 
   const handleUpload = async () => {
     setUploading(true);
-    let count = 0;
-    for (const r of rows) {
-      const dbOcc = {
-        name: r.name, tier: r.tier || "Gold", depth: r.depth || "Good", sector: r.sector || "",
-        city: r.city || "", sqft: r.sqft ? parseInt(r.sqft) : null, lease_expiry: r.lease_expiry || null,
-        risk: r.risk || "Low", owner: r.owner || currentUser.name, notes: r.notes || "",
-        gcc_classification: r.gcc_classification || "GCC", asset: r.asset || "",
-        building: r.building || "", unit_floor: r.unit_floor || "",
-        renewal_status: r.renewal_status || "Active",
-        relationship_tenure: r.relationship_tenure || null,
-        created_by: currentUser.name, created_at: tsNow(),
-      };
-      await supabase.from("occupiers").insert([dbOcc]);
-      count++;
-      setDone(count);
+    try {
+      const payload = rows.map(r => ({
+        name: r.name,
+        tier: r.tier,
+        depth: r.depth || null,
+        sector: r.sector || null,
+        city: r.city || null,
+        sqft: r.sqft ? parseInt(r.sqft, 10) : null,
+        lease_expiry: r.lease_expiry || null,
+        risk: r.risk || null,
+        owner: r.owner || currentUser.name,
+        notes: r.notes || null,
+        created_by: currentUser.name,
+      }));
+      const res = await api.post("/occupiers/bulk", payload);
+      const count = res.data?.data?.length ?? rows.length;
+      toast.success(`${count} occupier${count !== 1 ? "s" : ""} imported successfully`);
+      setTimeout(() => onUpload(), 400);
+    } catch (err) {
+      const serverErrors = err.response?.data?.errors;
+      if (Array.isArray(serverErrors) && serverErrors.length > 0) {
+        serverErrors.slice(0, 4).forEach(e =>
+          toast.error(`Row ${e.row} · ${e.field}: ${e.message}`, { duration: 6000 }),
+        );
+        if (serverErrors.length > 4)
+          toast.error(`…and ${serverErrors.length - 4} more validation errors`, { duration: 6000 });
+      } else {
+        toast.error(err.response?.data?.error || "Upload failed — please try again");
+      }
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
-    setTimeout(() => onUpload(), 800);
   };
 
   return (
@@ -853,8 +930,8 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
 
         {uploading && (
           <div style={{ marginBottom: 16 }}>
-            <ProgressBar pct={(done / rows.length) * 100} color="#E97132" />
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Importing {done} of {rows.length}...</div>
+            <ProgressBar pct={100} color="#E97132" />
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>Uploading {rows.length} record{rows.length !== 1 ? "s" : ""}…</div>
           </div>
         )}
 
@@ -876,7 +953,7 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const cityAssets = CITY_ASSETS[f.city] || [];
-  const assetOptional = f.city === "Solar Assets" || f.city === "Other" || !f.city;
+  const assetOptional = !f.city;
 
   return (
     <div>
@@ -910,7 +987,17 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
         <div style={S.formGroup}><label style={S.label}>Area (sq ft)</label><Input type="number" value={f.sqft || ""} onChange={e => set("sqft", e.target.value)} /></div>
       </div>
       <div style={S.grid2}>
-        <div style={S.formGroup}><label style={S.label}>Lease Expiry (YYYY-MM)</label><Input value={f.leaseExpiry || ""} onChange={e => set("leaseExpiry", e.target.value)} placeholder="2027-06" /></div>
+        <div style={S.formGroup}>
+          <label style={S.label}>Lease Expiry (DD-MM-YYYY)</label>
+          <DatePicker
+            selected={parseDdMmYyyy(f.leaseExpiry || "")}
+            onChange={(date) => set("leaseExpiry", date ? formatDdMmYyyy(date) : "")}
+            dateFormat="dd-MM-yyyy"
+            placeholderText="DD-MM-YYYY"
+            isClearable
+            customInput={<Input />}
+          />
+        </div>
         <div style={S.formGroup}><label style={S.label}>Renewal Status</label><Select value={f.renewalStatus || "Active"} onChange={e => set("renewalStatus", e.target.value)}>{RENEWAL_STATUSES.map(r => <option key={r}>{r}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
@@ -1687,7 +1774,7 @@ export default function App() {
     const hasAdmin = mapped.some(u => u.name === HARDCODED_ADMIN.name);
     return hasAdmin ? mapped : [HARDCODED_ADMIN, ...mapped];
   }, [rawUsers]);
-  const occs  = useMemo(() => rawOccs.map(mapOcc),   [rawOccs]);
+  const occs  = useMemo(() => rawOccs.map(o => ({ ...mapOcc(o), leaseExpiry: normalizeLeaseDate(o.lease_expiry) })),   [rawOccs]);
   const meets = useMemo(() => rawMeets.map(mapMeet),  [rawMeets]);
   const audit = useMemo(() => rawAudit.map(mapAudit), [rawAudit]);
 
@@ -1762,10 +1849,10 @@ export default function App() {
     try { localStorage.removeItem(SK_SESSION); } catch {}
   };
 
-  const handleAddUser = async ({ name, role, isAdmin, otp }) => {
+  const handleAddUser = async ({ name, role, department, isAdmin = false, otp }) => {
     const hashedOtp = await hashCode(otp);
     const result = await dispatch(createUserThunk({
-      name, role, is_admin: isAdmin, is_active: true,
+      name, role, department, is_admin: isAdmin, is_active: true,
       password_hash: hashedOtp, created_by: currentUser.name,
     }));
     if (createUserThunk.fulfilled.match(result)) {
@@ -2005,23 +2092,23 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <LogoTopbar />
           <span style={S.topbarTitle}>Knowledge Realty Trust — Tracker</span>
-          {lastSync && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginLeft: 6 }}>↻ {lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
+          {lastSync && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>↻ {lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{occs.length} occupiers · {meets.length} meetings</span>
-          <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6, color: "rgba(255,255,255,0.6)", display: "flex" }} title="Toggle theme">
-            <Ic n={theme === "dark" ? "sun" : "moon"} size={18} color="rgba(255,255,255,0.6)" />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{occs.length} occupiers · {meets.length} meetings</span>
+          <button onClick={() => setTheme(t => t === "dark" ? "light" : "dark")} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6, color: "var(--text-muted)", display: "flex" }} title="Toggle theme">
+            <Ic n={theme === "dark" ? "sun" : "moon"} size={18} color="var(--text-muted)" />
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(255,255,255,0.06)", borderRadius: 10, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--btn-bg)", borderRadius: 10, padding: "6px 12px", border: "1px solid var(--border-light)" }}>
             <Avatar name={currentUser.name} size={28} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>
                 {currentUser.name}
                 {currentUser.isAdmin && <span style={{ fontSize: 9, color: "#E97132", marginLeft: 6 }}>● ADMIN</span>}
               </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{currentUser.role}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{currentUser.role}</div>
             </div>
-            <button style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer", marginLeft: 4, padding: 0 }} onClick={handleLogout}>Sign out</button>
+            <button style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", marginLeft: 4, padding: 0 }} onClick={handleLogout}>Sign out</button>
           </div>
         </div>
       </div>
@@ -2045,18 +2132,17 @@ export default function App() {
             {/* Occupiers list */}
             {tab === "occupiers" && !selectedOccId && (
               <div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-                  <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
-                    <Ic n="dashboard" size={14} color="#94a3b8" />
-                    <Input style={{ paddingLeft: 32 }} placeholder="Search by name or city..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 14, flexWrap: "nowrap" }}>
+                  <div style={{ position: "relative", flex: 1, minWidth: 260, height: 40 }}>
+                    <Input style={{ ...S.toolbarInput, paddingLeft: 14 }} placeholder="Search by name or city..." value={search} onChange={e => setSearch(e.target.value)} />
                   </div>
-                  <Select style={{ width: "auto" }} value={filterTier} onChange={e => setFilterTier(e.target.value)}><option value="">All tiers</option>{TIERS.map(t => <option key={t} value={t}>{tierLabel(t)}</option>)}</Select>
-                  <Select style={{ width: "auto" }} value={filterDepth} onChange={e => setFilterDepth(e.target.value)}><option value="">All depths</option>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select>
-                  <Select style={{ width: "auto" }} value={filterRisk} onChange={e => setFilterRisk(e.target.value)}><option value="">All risk</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select>
+                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterTier} onChange={e => setFilterTier(e.target.value)}><option value="">All tiers</option>{TIERS.map(t => <option key={t} value={t}>{tierLabel(t)}</option>)}</Select>
+                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterDepth} onChange={e => setFilterDepth(e.target.value)}><option value="">All depths</option>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select>
+                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterRisk} onChange={e => setFilterRisk(e.target.value)}><option value="">All risk</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select>
                   {canWrite(currentUser, "occupiers") && (
                     <>
-                      <Btn style={S.btnSecondary} onClick={() => setShowBulkUpload(true)}><Ic n="upload" size={14} /> Bulk Upload</Btn>
-                      <Btn style={S.btnPrimary} onClick={() => { setEditOcc(null); setShowOccForm(true); }}><Ic n="plus" size={14} /> Add Occupier</Btn>
+                      <Btn style={{ ...S.btnSecondary, ...S.toolbarBtn }} onClick={() => setShowBulkUpload(true)}><Ic n="upload" size={14} /> Bulk Upload</Btn>
+                      <Btn style={{ ...S.btnPrimary, ...S.toolbarBtn }} onClick={() => { setEditOcc(null); setShowOccForm(true); }}><Ic n="plus" size={14} /> Add Occupier</Btn>
                     </>
                   )}
                   {selectedOccIds.size > 0 && currentUser.isAdmin && (
@@ -2066,7 +2152,7 @@ export default function App() {
                 <div style={{ ...S.card, padding: "6px 10px" }}>
                   <div style={{ display: "flex", alignItems: "center", padding: "4px 10px 8px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", gap: 10, borderBottom: "1px solid var(--divider)" }}>
                     {currentUser.isAdmin && <div style={{ width: 22 }}><input type="checkbox" checked={filteredOccs.length > 0 && filteredOccs.every(o => selectedOccIds.has(o.id))} onChange={e => { if (e.target.checked) setSelectedOccIds(new Set(filteredOccs.map(o => o.id))); else setSelectedOccIds(new Set()); }} /></div>}
-                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 90 }}>City</div><div style={{ width: 70 }}>Risk</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
+                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 70 }}>Risk</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
                   </div>
                   {filteredOccs.length === 0
                     ? <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)", fontSize: 13 }}>No occupiers match your filters</div>
@@ -2087,7 +2173,7 @@ export default function App() {
                           <div style={{ flex: 1, fontWeight: 600, fontSize: 13, cursor: "pointer" }} onClick={() => setSelectedOccId(o.id)}>{o.name}</div>
                           <div style={{ width: 110 }} onClick={() => setSelectedOccId(o.id)}><TierBadge tier={o.tier} /></div>
                           <div style={{ width: 90 }} onClick={() => setSelectedOccId(o.id)}><DepthBadge depth={o.depth} /></div>
-                          <div style={{ width: 90, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.city || "—"}</div>
+                          <div style={{ width: 120, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.city || "—"}</div>
                           <div style={{ width: 70, fontSize: 12, fontWeight: 600, color: RISK_COLOR[o.risk] }} onClick={() => setSelectedOccId(o.id)}>{o.risk}</div>
                           <div style={{ width: 80, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.gccClassification || "—"}</div>
                           <div style={{ width: 100, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{last ? last.date : "None"}</div>

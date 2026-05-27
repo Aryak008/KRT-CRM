@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://13.201.193.204/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'https://crm.knowledgerealtytrust.com/api',
   headers: {
     Accept: 'application/json',
     'Content-Type': 'application/json',

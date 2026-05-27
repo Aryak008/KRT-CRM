@@ -2,7 +2,7 @@ version: '3'
 
 services:
   krt-crm:
-    image: dharvikvayuz/krt:0.0.1-ai
+    image: dharvikvayuz/krt:0.0.5-ai
     container_name: krt-crm
     ports:
       - "3002:80"

@@ -817,13 +817,18 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: "array", cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = XLSX.utils.sheet_to_json(ws, { defval: "" });
         const errs = [];
         const parsed = raw.map((row, idx) => {
           const r = {};
-          BULK_COLS.forEach(c => { r[c.key] = String(row[c.label] || row[c.key] || "").trim(); });
+          BULK_COLS.forEach(c => {
+            const val = row[c.label] ?? row[c.key] ?? "";
+            r[c.key] = val instanceof Date
+              ? val.toISOString().split("T")[0]
+              : String(val).trim();
+          });
           const rowNum = idx + 2;
           if (!r.name) errs.push(`Row ${rowNum}: Name is required`);
           if (r.tier && !TIERS.includes(r.tier)) {

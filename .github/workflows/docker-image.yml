@@ -29,7 +29,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: dharvikkrt/krt:0.0.6-ai
+          tags: dharvikkrt/krt:0.0.7-ai
           build-args: |
             VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
             VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}

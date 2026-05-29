@@ -140,6 +140,7 @@ ALTER TABLE audit_log         ENABLE ROW LEVEL SECURITY;
 
 -- Allow anon/authenticated full access (app handles auth itself)
 CREATE POLICY "allow_all_users"             ON users             FOR ALL USING (true) WITH CHECK (true);
+
 CREATE POLICY "allow_all_roles"             ON roles             FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_occupiers"         ON occupiers         FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_meetings"          ON meetings          FOR ALL USING (true) WITH CHECK (true);
@@ -147,3 +148,20 @@ CREATE POLICY "allow_all_key_contacts"      ON key_contacts      FOR ALL USING (
 CREATE POLICY "allow_all_action_items"      ON action_items      FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_engagement_events" ON engagement_events FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_audit_log"         ON audit_log         FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- Migration: rename tier values Platinum/Gold/Silver → A/B/C
+-- Run once after deploying the new frontend build
+-- ============================================================
+UPDATE occupiers SET tier = 'A' WHERE tier = 'Platinum';
+UPDATE occupiers SET tier = 'B' WHERE tier = 'Gold';
+UPDATE occupiers SET tier = 'C' WHERE tier = 'Silver';
+
+-- ============================================================
+-- Migration: rename relationship_depth values → High/Medium/Low
+-- Average → Low, Good → Medium, Very Good → High, Excellent → High
+-- ============================================================
+UPDATE occupiers SET depth = 'Low'    WHERE depth = 'Average';
+UPDATE occupiers SET depth = 'Medium' WHERE depth = 'Good';
+UPDATE occupiers SET depth = 'High'   WHERE depth = 'Very Good';
+UPDATE occupiers SET depth = 'High'   WHERE depth = 'Excellent';

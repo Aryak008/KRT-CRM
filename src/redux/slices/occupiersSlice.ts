@@ -4,6 +4,7 @@ import {
   createOccupierThunk,
   fetchOccupiersThunk,
   updateOccupierThunk,
+  deleteOccupierThunk,
 } from '../thunks/occupiersThunks';
 
 interface OccupiersState {
@@ -75,6 +76,12 @@ const occupiersSlice = createSlice({
       .addCase(updateOccupierThunk.rejected, (state, action) => {
         state.submitting = false;
         state.error = (action.payload as string) ?? 'Unable to update occupier.';
+      })
+
+      // ── Delete ───────────────────────────────────────────────────────────
+      .addCase(deleteOccupierThunk.fulfilled, (state, action) => {
+        const deleted = action.payload as { id: string } | null;
+        if (deleted?.id) state.items = state.items.filter((o) => String(o.id) !== deleted.id);
       });
   },
 });

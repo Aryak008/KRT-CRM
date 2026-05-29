@@ -19,3 +19,9 @@ export const updateOccupierThunk = createApiThunk<unknown, UpdateOccupierPayload
   ({ id, ...payload }) => api.put(`/occupiers/${id}`, payload),
   { successMessage: 'Occupier updated.' },
 );
+
+export const deleteOccupierThunk = createApiThunk<unknown, string>(
+  'occupiers/delete',
+  (id) => api.delete(`/occupiers/${id}`),
+  { successMessage: 'Occupier deleted.' },
+);

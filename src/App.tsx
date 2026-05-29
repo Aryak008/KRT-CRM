@@ -6,7 +6,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchUsersThunk, createUserThunk, patchUserThunk } from "./redux/thunks/usersThunks";
-import { fetchOccupiersThunk, createOccupierThunk, updateOccupierThunk } from "./redux/thunks/occupiersThunks";
+import { fetchOccupiersThunk, createOccupierThunk, updateOccupierThunk, deleteOccupierThunk } from "./redux/thunks/occupiersThunks";
 import { fetchMeetingsThunk, createMeetingThunk, deleteMeetingThunk } from "./redux/thunks/meetingsThunks";
 import { fetchAuditThunk, createAuditEntryThunk } from "./redux/thunks/auditThunks";
 import toast from "react-hot-toast";
@@ -27,10 +27,10 @@ const mapActionItem = (a) => ({ id: a.id, meetingId: a.meeting_id, description: 
 const mapEvent = (e) => ({ id: e.id, occupierId: e.occupier_id, title: e.title, eventDate: e.event_date, eventType: e.event_type, recurrence: e.recurrence, reminderDays: e.reminder_days, notes: e.notes, createdBy: e.created_by, createdAt: e.created_at });
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TIERS = ["Platinum", "Gold", "Silver"];
-const TIER_ALIAS = { Platinum: "A", Gold: "B", Silver: "C" };
-const TIER_CADENCE = { Platinum: 30, Gold: 90, Silver: 180 };
-const DEPTHS = ["Average", "Good", "Very Good", "Excellent"];
+const TIERS = ["A", "B", "C"];
+const TIER_ALIAS = { A: "A", B: "B", C: "C" };
+const TIER_CADENCE = { A: 30, B: 90, C: 180 };
+const DEPTHS = ["High", "Medium", "Low"];
 const MTYPES = ["Leasing Review", "Operations Review", "Management Connect", "CXO Connect", "Asset Walkthrough", "Occupier Connect Event", "Other"];
 const OUTCOMES = ["Positive", "Neutral", "Concerning", "Action Required"];
 const RISK = ["Low", "Medium", "High"];
@@ -42,23 +42,31 @@ const EVENT_TYPES = ["Planned Occupier Connect", "Recurring Meeting", "Team Sche
 const RECURRENCES = ["None", "Weekly", "Monthly", "Quarterly", "Bi-Annual"];
 
 const SECTORS = [
-  "Aviation","Banking","Banking & Finance","BFSI","Building Solutions provider",
-  "Business Center","Business Centre","Chemicals","Club & Business Centre","Commodity Trading",
-  "Consulate","Consulting","Consumer Internet & E-commerce apps","Co-working","Creche",
-  "Education","Electrics & Automation","Engineering","Engineering & Manufacturing",
-  "Finance Services","Financial Services","Financial Services & Real Estate & Infrastructure",
-  "Fitness","Flex Workspaces","FMCG","FMEG","Foreign Consulate","Gymnasium","Healthcare",
-  "Hospitality","Human Resources","Industrial Machinary manufacturing","Information Tech",
-  "Insurance","IPC","IT - Cyber Security","IT services","IT Services & Consulting",
-  "IT/Advertising/Broadcasting","IT/ITES","Law Firm","Legal","Legal Firm","Liquor",
-  "Logistic","Logistics","Management Consulting","Manufacturing",
-  "Manufacturing (Office Automation)","Marketing Agency","Measuring equipment's","Media",
-  "Metals Manufacturing","Military Aircraft Manufacturing","Office Space","Paints",
-  "Petrochemical","Pharmaceuticals","Real Estate","Real Estate & Infrastructure",
-  "Real Estate Developer","Research & Investment Intelligence","Retail Jewellery",
-  "Seimens Energy","Seimens Limited","Semiconductor Manufacturing","Shipping","Social Media",
-  "Software Development","Speciality Glass packaging","Steel & Infrastructure","Telecom",
-  "Trade Economic Body of Korea","Warehouse","Wellness"
+  "Amenities",
+  "Banking, financial services, insurance",
+  "BFSI",
+  "Consulate",
+  "Co-Working",
+  "Creche",
+  "Education",
+  "Electrics & Automation",
+  "Engineering",
+  "Engineering & manufacturing",
+  "Financial Services",
+  "Flex Workspaces",
+  "FMCG",
+  "FMCG & Retail",
+  "Gymnasium",
+  "Health & Fitness",
+  "Hospitality",
+  "Infrastructure, real estate & logistics",
+  "Logistic",
+  "Measuring equipment's",
+  "Media & marketing",
+  "Military Aircraft Manufacturing",
+  "Pharma & Healthcare",
+  "Research, consulting & analytics",
+  "Technology",
 ];
 
 const CITIES = ["Bengaluru","Hyderabad","Mumbai","Chennai","Gurugram","GIFT City"];
@@ -85,7 +93,7 @@ const PERMISSION_MODULES = [
 
 const BULK_COLS = [
   { key: "name", label: "Occupier Name *" },
-  { key: "tier", label: "Tier (Platinum/Gold/Silver) *" },
+  { key: "tier", label: "Tier (A/B/C) *" },
   { key: "sector", label: "Sector" },
   { key: "city", label: "City" },
   { key: "gcc_classification", label: "GCC Classification" },
@@ -95,9 +103,9 @@ const BULK_COLS = [
   { key: "sqft", label: "Area (sq ft)" },
   { key: "lease_expiry", label: "Lease Expiry (DD-MM-YYYY)" },
   { key: "risk", label: "Risk (Low/Medium/High)" },
-  { key: "depth", label: "Depth (Average/Good/Very Good/Excellent)" },
+  { key: "depth", label: "Relationship Depth (High/Medium/Low)" },
   { key: "renewal_status", label: "Renewal Status" },
-  { key: "relationship_tenure", label: "Relationship Tenure (YYYY-MM-DD)" },
+  { key: "relationship_tenure", label: "Relationship Since (YYYY)" },
   { key: "owner", label: "Relationship Owner" },
   { key: "notes", label: "Account Notes" },
 ];
@@ -105,18 +113,18 @@ const BULK_COLS = [
 const SK_SESSION = "krt_crm_session_v2";
 
 // ─── Color constants ───────────────────────────────────────────────────────────
-const TIER_BG = { Platinum: "#0E2841", Gold: "#92400e", Silver: "#334155" };
-const TIER_TEXT = { Platinum: "#b8d4e8", Gold: "#fde68a", Silver: "#e2e8f0" };
-const DEPTH_BG = { Average: "#fee2e2", "Good": "#fef9c3", "Very Good": "#d1fae5", "Excellent": "#dbeafe" };
-const DEPTH_TEXT = { Average: "#991b1b", "Good": "#854d0e", "Very Good": "#065f46", "Excellent": "#1e3a8a" };
+const TIER_BG = { A: "#0E2841", B: "#92400e", C: "#334155" };
+const TIER_TEXT = { A: "#b8d4e8", B: "#fde68a", C: "#e2e8f0" };
+const DEPTH_BG = { High: "#dbeafe", Medium: "#fef9c3", Low: "#fee2e2" };
+const DEPTH_TEXT = { High: "#1e3a8a", Medium: "#854d0e", Low: "#991b1b" };
 const OUTCOME_BG = { Positive: "#d1fae5", Neutral: "#f3f4f6", Concerning: "#fee2e2", "Action Required": "#fef3c7" };
 const OUTCOME_TEXT = { Positive: "#065f46", Neutral: "#374151", Concerning: "#991b1b", "Action Required": "#92400e" };
 const RISK_COLOR = { Low: "#196B24", Medium: "#854d0e", High: "#991b1b" };
 const ACTION_STATUS_BG = { Open: "#fee2e2", "In Progress": "#fef9c3", Closed: "#d1fae5" };
 const ACTION_STATUS_COLOR = { Open: "#991b1b", "In Progress": "#854d0e", Closed: "#196B24" };
-const HEALTH_COLOR = { Average: "#e74c3c", "Good": "#E97132", "Very Good": "#4EA72E", "Excellent": "#156082" };
+const HEALTH_COLOR = { High: "#156082", Medium: "#E97132", Low: "#e74c3c" };
 const RDI_COLORS = { High: "#196B24", Medium: "#E97132", Low: "#991b1b" };
-const DEPT_TO_RDI = { Excellent: "High", "Very Good": "High", Good: "Medium", Average: "Low" };
+const DEPT_TO_RDI = { High: "High", Medium: "Medium", Low: "Low" };
 const EVENT_TYPE_COLORS = { "Planned Occupier Connect": "#156082", "Recurring Meeting": "#0F9ED5", "Team Schedule": "#467886", "Site Visit": "#E97132", Other: "#6b7280" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -189,7 +197,7 @@ async function hashCode(code) {
   const h = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-function tierLabel(tier) { return `${TIER_ALIAS[tier] || tier} (${tier})`; }
+function tierLabel(tier) { return `Tier ${tier}`; }
 function daysBetween(dateStr) {
   if (!dateStr) return null;
   return Math.floor((new Date() - new Date(dateStr)) / (1000 * 60 * 60 * 24));
@@ -797,7 +805,7 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
 
   const downloadSample = (fmt) => {
     const labels = BULK_COLS.map(c => c.label);
-    const sample = ["Sample Corp", "Gold", "IT/ITES", "Bengaluru", "GCC", "Cessna Business Park", "Block A", "Floor 3", "50000", "01-06-2027", "Low", "Good", "Active", "2020-01-15", "Manager Name", "Sample notes"];
+    const sample = ["Sample Corp", "B", "Technology", "Bengaluru", "GCC", "Cessna Business Park", "Block A", "Floor 3", "50000", "01-06-2027", "Low", "High", "Active", "2020", "Manager Name", "Sample notes"];
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([labels, sample]);
     ws["!cols"] = labels.map(h => ({ wch: Math.max(h.length + 2, 14) }));
@@ -832,17 +840,17 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
           const rowNum = idx + 2;
           if (!r.name) errs.push(`Row ${rowNum}: Name is required`);
           if (r.tier && !TIERS.includes(r.tier)) {
-            errs.push(`Row ${rowNum}: Invalid tier "${r.tier}" — defaulted to Gold`);
-            r.tier = "Gold";
-          } else if (!r.tier) { r.tier = "Gold"; }
+            errs.push(`Row ${rowNum}: Invalid tier "${r.tier}" — expected A, B or C, defaulted to B`);
+            r.tier = "B";
+          } else if (!r.tier) { r.tier = "B"; }
           if (r.risk && !RISK.includes(r.risk)) {
             errs.push(`Row ${rowNum}: Invalid risk "${r.risk}" — defaulted to Low`);
             r.risk = "Low";
           } else if (!r.risk) { r.risk = "Low"; }
           if (r.depth && !DEPTHS.includes(r.depth)) {
-            errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — defaulted to Good`);
-            r.depth = "Good";
-          } else if (!r.depth) { r.depth = "Good"; }
+            errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — expected High, Medium or Low, defaulted to Medium`);
+            r.depth = "Medium";
+          } else if (!r.depth) { r.depth = "Medium"; }
           if (r.sqft && isNaN(parseInt(r.sqft))) {
             errs.push(`Row ${rowNum}: sqft "${r.sqft}" is not a number — will be skipped`);
             r.sqft = "";
@@ -852,8 +860,8 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
             if (!converted) errs.push(`Row ${rowNum}: Lease expiry "${r.lease_expiry}" not recognised — expected DD-MM-YYYY or YYYY-MM-DD, will be skipped`);
             r.lease_expiry = converted || "";
           }
-          if (r.relationship_tenure && !/^\d{4}-\d{2}-\d{2}$/.test(r.relationship_tenure)) {
-            errs.push(`Row ${rowNum}: Relationship tenure "${r.relationship_tenure}" must be YYYY-MM-DD, will be skipped`);
+          if (r.relationship_tenure && !/^\d{4}$/.test(r.relationship_tenure)) {
+            errs.push(`Row ${rowNum}: Relationship Since "${r.relationship_tenure}" must be a 4-digit year (e.g. 2018), will be skipped`);
             r.relationship_tenure = "";
           }
           if (r.gcc_classification && !GCC_OPTIONS.includes(r.gcc_classification)) {
@@ -891,7 +899,7 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
         building: r.building || null,
         unit_floor: r.unit_floor || null,
         renewal_status: r.renewal_status || null,
-        relationship_tenure: r.relationship_tenure || null,
+        relationship_tenure: r.relationship_tenure ? parseInt(r.relationship_tenure, 10) : null,
         created_by: currentUser.name,
       }));
       const res = await api.post("/occupiers/bulk", payload);
@@ -971,7 +979,7 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
 
 // ─── Occupier Form ────────────────────────────────────────────────────────────
 function OccupierForm({ occ, currentUser, onSave, onCancel }) {
-  const blank = { id: "", name: "", tier: "Gold", depth: "Good", sector: "IT/ITES", city: "Bengaluru", sqft: "", leaseExpiry: "", risk: "Low", owner: currentUser.name, notes: "", gccClassification: "GCC", asset: "", building: "", unitFloor: "", renewalStatus: "Active", relationshipTenure: "" };
+  const blank = { id: "", name: "", tier: "B", depth: "High", sector: "", city: "Bengaluru", sqft: "", leaseExpiry: "", risk: "Low", owner: currentUser.name, notes: "", gccClassification: "GCC", asset: "", building: "", unitFloor: "", renewalStatus: "Active", relationshipTenure: "" };
   const [f, setF] = useState(occ ? { ...blank, ...occ } : blank);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -1024,8 +1032,8 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
         <div style={S.formGroup}><label style={S.label}>Renewal Status</label><Select value={f.renewalStatus || "Active"} onChange={e => set("renewalStatus", e.target.value)}>{RENEWAL_STATUSES.map(r => <option key={r}>{r}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
-        <div style={S.formGroup}><label style={S.label}>Risk Flag</label><Select value={f.risk} onChange={e => set("risk", e.target.value)}>{RISK.map(r => <option key={r}>{r}</option>)}</Select></div>
-        <div style={S.formGroup}><label style={S.label}>Relationship Tenure (since)</label><Input type="date" value={f.relationshipTenure || ""} onChange={e => set("relationshipTenure", e.target.value)} /></div>
+        <div style={S.formGroup}><label style={S.label}>Risk Level</label><Select value={f.risk} onChange={e => set("risk", e.target.value)}>{RISK.map(r => <option key={r}>{r}</option>)}</Select></div>
+        <div style={S.formGroup}><label style={S.label}>Relationship Since (Year)</label><Input type="number" min={1900} max={2100} value={f.relationshipTenure || ""} onChange={e => set("relationshipTenure", e.target.value)} placeholder="e.g. 2018" /></div>
       </div>
       <div style={S.formGroup}><label style={S.label}>Relationship Owner</label><Input value={f.owner || ""} onChange={e => set("owner", e.target.value)} /></div>
       <div style={S.formGroup}><label style={S.label}>Account Notes</label><Textarea value={f.notes || ""} onChange={e => set("notes", e.target.value)} /></div>
@@ -1293,9 +1301,9 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   const recent = [...meets].sort((a, b) => (b.createdAt || b.date).localeCompare(a.createdAt || a.date)).slice(0, 6);
   const tierCounts = TIERS.map(t => ({ t, n: occs.filter(o => o.tier === t).length }));
   const depthCounts = DEPTHS.map(d => ({ d, n: occs.filter(o => o.depth === d).length }));
-  const depthScore = { Average: 1, "Good": 2, "Very Good": 3, "Excellent": 4 };
+  const depthScore = { High: 3, Medium: 2, Low: 1 };
   const avgD = occs.reduce((a, o) => a + (depthScore[o.depth] || 2), 0) / Math.max(total, 1);
-  const avgLabel = avgD < 1.75 ? "Average" : avgD < 2.5 ? "Good" : avgD < 3.5 ? "Very Good" : "Excellent";
+  const avgLabel = avgD >= 2.5 ? "High" : avgD >= 1.5 ? "Medium" : "Low";
   const rdiCounts = { High: 0, Medium: 0, Low: 0 };
   occs.forEach(o => { const rdi = DEPT_TO_RDI[o.depth] || "Low"; rdiCounts[rdi]++; });
   const totalRDI = total || 1;
@@ -1320,13 +1328,12 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   return (
     <div>
       {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 18 months:</strong> {expiring18.map(o => `${o.name} (${o.leaseExpiry})`).join(", ")}</div></div>}
-      {atRisk.length > 0 && <div style={S.alertRed}><Ic n="warning" size={15} /><div><strong>{atRisk.length} high-risk account{atRisk.length > 1 ? "s" : ""}:</strong> {atRisk.map(o => o.name).join(", ")}</div></div>}
 
       <div style={{ ...S.grid4, marginBottom: 20 }}>
-        <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "Platinum").length} Platinum</div></div>
+        <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "A").length} Tier A</div></div>
         <div style={S.statCard}><div style={S.statLabel}>Meetings Logged</div><div style={S.statValue}>{meets.length}</div><div style={S.statSub}>Across all accounts</div></div>
-        <div style={S.statCard}><div style={S.statLabel}>At-Risk Accounts</div><div style={{ ...S.statValue, color: atRisk.length > 0 ? "#991b1b" : "#196B24" }}>{atRisk.length}</div><div style={S.statSub}>High risk flag</div></div>
-        <div style={S.statCard}><div style={S.statLabel}>Avg Relationship Depth</div><div style={{ ...S.statValue, fontSize: 16, paddingTop: 4 }}>{avgLabel}</div><div style={S.statSub}>{avgD.toFixed(1)} / 4.0</div></div>
+        <div style={S.statCard}><div style={S.statLabel}>Low Depth Accounts</div><div style={{ ...S.statValue, color: occs.filter(o => o.depth === "Low").length > 0 ? "#991b1b" : "#196B24" }}>{occs.filter(o => o.depth === "Low").length}</div><div style={S.statSub}>Relationship depth: Low</div></div>
+        <div style={S.statCard}><div style={S.statLabel}>Avg Relationship Depth</div><div style={{ ...S.statValue, fontSize: 16, paddingTop: 4 }}>{avgLabel}</div><div style={S.statSub}>{avgD.toFixed(1)} / 3.0</div></div>
       </div>
 
       <div style={S.card}>
@@ -1370,7 +1377,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
                 <g key={t}>
                   <rect x={x} y={chartH - h} width={barW} height={h} rx={6} fill={TIER_BG[t]} opacity={0.85} />
                   <text x={x + barW / 2} y={chartH - h - 6} textAnchor="middle" fill="var(--text-strong)" fontSize={13} fontWeight={700}>{n}</text>
-                  <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fill="var(--text-muted)" fontSize={11}>{TIER_ALIAS[t]} ({t})</text>
+                  <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fill="var(--text-muted)" fontSize={11}>Tier {t}</text>
                 </g>
               );
             })}
@@ -1915,6 +1922,12 @@ export default function App() {
       sqft: occ.sqft ? parseInt(occ.sqft) : undefined,
       lease_expiry: occ.leaseExpiry || undefined,
       risk: occ.risk, owner: occ.owner || undefined, notes: occ.notes || undefined,
+      gcc_classification: occ.gccClassification || undefined,
+      asset: occ.asset || undefined,
+      building: occ.building || undefined,
+      unit_floor: occ.unitFloor || undefined,
+      renewal_status: occ.renewalStatus || undefined,
+      relationship_tenure: occ.relationshipTenure ? parseInt(occ.relationshipTenure, 10) : undefined,
     };
     if (existing >= 0) {
       const result = await dispatch(updateOccupierThunk({ id: occ.id, ...payload, updated_by: currentUser.name }));
@@ -1945,8 +1958,10 @@ export default function App() {
     if (!window.confirm(`Delete ${ids.length} selected occupier${ids.length > 1 ? "s" : ""}? This cannot be undone.`)) return;
     for (const id of ids) {
       const occ = occs.find(o => o.id === id); if (!occ) continue;
-      await supabase.from("occupiers").delete().eq("id", id);
-      addAudit(currentUser.name, "deleted occupier", occ.name);
+      const result = await dispatch(deleteOccupierThunk(id));
+      if (deleteOccupierThunk.fulfilled.match(result)) {
+        addAudit(currentUser.name, "deleted occupier", occ.name);
+      }
     }
     await dispatch(fetchOccupiersThunk());
     await dispatch(fetchMeetingsThunk());
@@ -1973,6 +1988,9 @@ export default function App() {
         attendees: m.attendees || undefined,
         actions: m.actions || undefined,
         outcome: m.outcome || undefined,
+        department: m.department || undefined,
+        follow_up_date: m.followUpDate || undefined,
+        relationship_owner: m.relationshipOwner || undefined,
         created_by: currentUser.name,
       }));
       if (createMeetingThunk.fulfilled.match(result)) {
@@ -2002,8 +2020,10 @@ export default function App() {
     if (isReadOnly(currentUser)) return;
     const occ = occs.find(o => o.id === contact.occupierId);
     const dbContact = { occupier_id: contact.occupierId, name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary, created_by: currentUser.name, created_at: tsNow() };
-    const { data } = await supabase.from("key_contacts").insert([dbContact]).select();
-    if (data) { setContacts(p => [...p, mapContact(data[0])]); addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || "")); }
+    const { data, error } = await supabase.from("key_contacts").insert([dbContact]).select();
+    if (error) { console.error("[contacts] insert:", error.message); return; }
+    if (data?.[0]) { setContacts(p => [...p, mapContact(data[0])]); }
+    addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || ""));
   };
 
   const handleDeleteContact = async (id) => {
@@ -2040,7 +2060,8 @@ export default function App() {
     if (isReadOnly(currentUser)) return;
     const occ = occs.find(o => o.id === id); if (!occ) return;
     const occMeetIds = meets.filter(m => m.occupierId === id).map(m => m.id);
-    await supabase.from("occupiers").delete().eq("id", id);
+    const result = await dispatch(deleteOccupierThunk(id));
+    if (!deleteOccupierThunk.fulfilled.match(result)) return;
     await dispatch(fetchOccupiersThunk());
     await dispatch(fetchMeetingsThunk());
     setContacts(p => p.filter(c => c.occupierId !== id));

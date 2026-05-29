@@ -15,7 +15,7 @@ export interface User {
 }
 
 export interface Occupier {
-  id: number;
+  id: string;
   name: string;
   tier: string;
   depth: string | null;
@@ -81,6 +81,12 @@ export interface CreateOccupierPayload {
   risk?: string;
   owner?: string;
   notes?: string;
+  gcc_classification?: string;
+  asset?: string;
+  building?: string;
+  unit_floor?: string;
+  renewal_status?: string;
+  relationship_tenure?: string;
   created_by?: string;
 }
 
@@ -97,6 +103,9 @@ export interface CreateMeetingPayload {
   attendees?: string;
   actions?: string;
   outcome?: string;
+  department?: string;
+  follow_up_date?: string;
+  relationship_owner?: string;
   created_by?: string;
 }
 

@@ -1040,7 +1040,6 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
         <div style={S.formGroup}><label style={S.label}>Renewal Status</label><Select value={f.renewalStatus || "Active"} onChange={e => set("renewalStatus", e.target.value)}>{RENEWAL_STATUSES.map(r => <option key={r}>{r}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
-        <div style={S.formGroup}><label style={S.label}>Relationship Depth</label><Select value={f.risk} onChange={e => set("risk", e.target.value)}>{RISK.map(r => <option key={r}>{r}</option>)}</Select></div>
         <div style={S.formGroup}><label style={S.label}>Relationship Since (Year)</label><Input type="number" min={1900} max={2100} value={f.relationshipTenure || ""} onChange={e => set("relationshipTenure", e.target.value)} placeholder="e.g. 2018" /></div>
       </div>
       <div style={S.formGroup}><label style={S.label}>Relationship Owner</label><Input value={f.owner || ""} onChange={e => set("owner", e.target.value)} /></div>

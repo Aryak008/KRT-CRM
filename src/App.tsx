@@ -832,10 +832,12 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
         const parsed = raw.map((row, idx) => {
           const r = {};
           BULK_COLS.forEach(c => {
-            const val = row[c.label] ?? row[c.key] ?? "";
-            r[c.key] = val instanceof Date
-              ? val.toISOString().split("T")[0]
-              : String(val).trim();
+            const lbl = c.label.toLowerCase().trim();
+            const rawVal = row[c.label] ?? row[c.key] ??
+              Object.entries(row).find(([k]) => k.toLowerCase().trim() === lbl)?.[1] ?? "";
+            r[c.key] = rawVal instanceof Date
+              ? rawVal.toISOString().split("T")[0]
+              : String(rawVal).trim();
           });
           const rowNum = idx + 2;
           if (!r.name) errs.push(`Row ${rowNum}: Name is required`);
@@ -1032,7 +1034,6 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
         <div style={S.formGroup}><label style={S.label}>Renewal Status</label><Select value={f.renewalStatus || "Active"} onChange={e => set("renewalStatus", e.target.value)}>{RENEWAL_STATUSES.map(r => <option key={r}>{r}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
-        <div style={S.formGroup}><label style={S.label}>Risk Level</label><Select value={f.risk} onChange={e => set("risk", e.target.value)}>{RISK.map(r => <option key={r}>{r}</option>)}</Select></div>
         <div style={S.formGroup}><label style={S.label}>Relationship Since (Year)</label><Input type="number" min={1900} max={2100} value={f.relationshipTenure || ""} onChange={e => set("relationshipTenure", e.target.value)} placeholder="e.g. 2018" /></div>
       </div>
       <div style={S.formGroup}><label style={S.label}>Relationship Owner</label><Input value={f.owner || ""} onChange={e => set("owner", e.target.value)} /></div>
@@ -1166,7 +1167,6 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
               <span style={{ fontSize: 20, fontWeight: 700, color: "var(--text-strong)" }}>{occ.name}</span>
               <TierBadge tier={occ.tier} />
               <DepthBadge depth={occ.depth} />
-              <Badge label={`${occ.risk} risk`} bg={occ.risk === "High" ? "rgba(239,68,68,0.1)" : occ.risk === "Medium" ? "rgba(233,113,50,0.1)" : "rgba(25,107,36,0.1)"} color={RISK_COLOR[occ.risk]} />
               {occ.renewalStatus && <Badge label={occ.renewalStatus} bg="rgba(21,96,130,0.1)" color="#156082" />}
               {occ.gccClassification && <Badge label={occ.gccClassification} bg="rgba(15,158,213,0.1)" color="#0F9ED5" />}
             </div>
@@ -1296,7 +1296,6 @@ function EventModal({ occs, currentUser, defaultDate, onSave, onCancel }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   const total = occs.length;
-  const atRisk = occs.filter(o => o.risk === "High");
   const expiring18 = occs.filter(o => { const m = leaseMonths(o.leaseExpiry); return m !== null && m <= 18 && m > 0; });
   const recent = [...meets].sort((a, b) => (b.createdAt || b.date).localeCompare(a.createdAt || a.date)).slice(0, 6);
   const tierCounts = TIERS.map(t => ({ t, n: occs.filter(o => o.tier === t).length }));
@@ -1819,7 +1818,7 @@ export default function App() {
       ]);
       // Non-API entities → Supabase (contacts, action items, events, roles)
       const [cR, aiR, evR, rR] = await Promise.all([
-        supabase.from("key_contacts").select("*").then(r => r).catch(() => ({ data: null })),
+        api.get("/contacts").then(r => ({ data: r.data?.data || [] })).catch(() => ({ data: [] })),
         supabase.from("action_items").select("*").then(r => r).catch(() => ({ data: null })),
         supabase.from("engagement_events").select("*").order("event_date", { ascending: true }).then(r => r).catch(() => ({ data: null })),
         supabase.from("roles").select("*").then(r => r).catch(() => ({ data: null })),
@@ -2019,26 +2018,40 @@ export default function App() {
   const handleAddContact = async (contact) => {
     if (isReadOnly(currentUser)) return;
     const occ = occs.find(o => o.id === contact.occupierId);
-    const dbContact = { occupier_id: contact.occupierId, name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary, created_by: currentUser.name, created_at: tsNow() };
-    const { data, error } = await supabase.from("key_contacts").insert([dbContact]).select();
-    if (error) { console.error("[contacts] insert:", error.message); return; }
-    if (data?.[0]) { setContacts(p => [...p, mapContact(data[0])]); }
-    addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || ""));
+    const dbContact = { occupier_id: contact.occupierId, name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary, created_by: currentUser.name };
+    try {
+      const res = await api.post("/contacts", dbContact);
+      if (res.data?.data) setContacts(p => [...p, mapContact(res.data.data)]);
+      toast.success("Contact added.");
+      addAudit(currentUser.name, "added contact", contact.name + " @ " + (occ?.name || ""));
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to add contact");
+    }
   };
 
   const handleDeleteContact = async (id) => {
     if (isReadOnly(currentUser)) return;
     const c = contacts.find(x => x.id === id);
-    await supabase.from("key_contacts").delete().eq("id", id);
-    setContacts(p => p.filter(x => x.id !== id));
-    addAudit(currentUser.name, "deleted contact", c?.name || "");
+    try {
+      await api.delete(`/contacts/${id}`);
+      setContacts(p => p.filter(x => x.id !== id));
+      toast.success("Contact deleted.");
+      addAudit(currentUser.name, "deleted contact", c?.name || "");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to delete contact");
+    }
   };
 
   const handleEditContact = async (contact) => {
     if (isReadOnly(currentUser)) return;
-    await supabase.from("key_contacts").update({ name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary }).eq("id", contact.id);
-    setContacts(p => p.map(c => c.id === contact.id ? { ...c, ...contact } : c));
-    addAudit(currentUser.name, "edited contact", contact.name);
+    try {
+      const res = await api.put(`/contacts/${contact.id}`, { name: contact.name, designation: contact.designation, email: contact.email, phone: contact.phone, is_primary: contact.isPrimary });
+      if (res.data?.data) setContacts(p => p.map(c => c.id === contact.id ? mapContact(res.data.data) : c));
+      toast.success("Contact updated.");
+      addAudit(currentUser.name, "edited contact", contact.name);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to update contact");
+    }
   };
 
   const handleAddEvent = async (ev) => {
@@ -2182,7 +2195,6 @@ export default function App() {
                   </div>
                   <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterTier} onChange={e => setFilterTier(e.target.value)}><option value="">All tiers</option>{TIERS.map(t => <option key={t} value={t}>{tierLabel(t)}</option>)}</Select>
                   <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterDepth} onChange={e => setFilterDepth(e.target.value)}><option value="">All depths</option>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select>
-                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterRisk} onChange={e => setFilterRisk(e.target.value)}><option value="">All risk</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select>
                   {canWrite(currentUser, "occupiers") && (
                     <>
                       <Btn style={{ ...S.btnSecondary, ...S.toolbarBtn }} onClick={() => setShowBulkUpload(true)}><Ic n="upload" size={14} /> Bulk Upload</Btn>
@@ -2196,7 +2208,7 @@ export default function App() {
                 <div style={{ ...S.card, padding: "6px 10px" }}>
                   <div style={{ display: "flex", alignItems: "center", padding: "4px 10px 8px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", gap: 10, borderBottom: "1px solid var(--divider)" }}>
                     {currentUser.isAdmin && <div style={{ width: 22 }}><input type="checkbox" checked={filteredOccs.length > 0 && filteredOccs.every(o => selectedOccIds.has(o.id))} onChange={e => { if (e.target.checked) setSelectedOccIds(new Set(filteredOccs.map(o => o.id))); else setSelectedOccIds(new Set()); }} /></div>}
-                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 70 }}>Risk</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
+                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
                   </div>
                   {filteredOccs.length === 0
                     ? <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)", fontSize: 13 }}>No occupiers match your filters</div>
@@ -2218,7 +2230,6 @@ export default function App() {
                           <div style={{ width: 110 }} onClick={() => setSelectedOccId(o.id)}><TierBadge tier={o.tier} /></div>
                           <div style={{ width: 90 }} onClick={() => setSelectedOccId(o.id)}><DepthBadge depth={o.depth} /></div>
                           <div style={{ width: 120, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.city || "—"}</div>
-                          <div style={{ width: 70, fontSize: 12, fontWeight: 600, color: RISK_COLOR[o.risk] }} onClick={() => setSelectedOccId(o.id)}>{o.risk}</div>
                           <div style={{ width: 80, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.gccClassification || "—"}</div>
                           <div style={{ width: 100, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{last ? last.date : "None"}</div>
                           <div style={{ width: 80 }} onClick={() => setSelectedOccId(o.id)}>{o.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Avatar name={o.createdBy} size={18} /><span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{o.createdBy.split(" ")[0]}</span></div>}</div>

@@ -125,7 +125,7 @@ const ACTION_STATUS_COLOR = { Open: "#991b1b", "In Progress": "#854d0e", Closed:
 const HEALTH_COLOR = { High: "#156082", Medium: "#E97132", Low: "#e74c3c" };
 const RDI_COLORS = { High: "#196B24", Medium: "#E97132", Low: "#991b1b" };
 const DEPT_TO_RDI = { High: "High", Medium: "Medium", Low: "Low" };
-const EVENT_TYPE_COLORS = { "Planned Occupier Connect": "#156082", "Recurring Meeting": "#0F9ED5", "Team Schedule": "#467886", "Site Visit": "#E97132", Other: "#6b7280" };
+const EVENT_TYPE_COLORS = { "Planned Occupier Connect": "#156082", "Recurring Meeting": "#0F9ED5", "Team Schedule": "#467886", "Site Visit": "#E97132", "Follow-up": "#7c3aed", Other: "#6b7280" };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function genId() { return "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -147,11 +147,18 @@ function resolvePermissions(user, roles) {
   return { ...user, permissions: role?.permissions || {} };
 }
 function fmtNum(n) { return n ? Number(n).toLocaleString() : "—"; }
-function fmtDateTime(s) {
+function fmtDate(s) {
   if (!s) return "—";
-  try { return new Date(s).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
-  catch { return s; }
+  try {
+    const ddmmyyyy = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(String(s));
+    if (ddmmyyyy) {
+      const d = new Date(`${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2,"0")}-${ddmmyyyy[1].padStart(2,"0")}`);
+      return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    }
+    return new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return String(s); }
 }
+function fmtDateTime(s) { return fmtDate(s); }
 function leaseMonths(exp) {
   if (!exp) return null;
   const [day, month, year] = String(exp).split("-");
@@ -1098,19 +1105,27 @@ function CopySynopsisBtn({ meeting, occName, actionItems }) {
 }
 
 // ─── Meeting Form ─────────────────────────────────────────────────────────────
-function MeetingForm({ occs, preOccId, currentUser, onSave, onCancel, editMeet = null }) {
+function MeetingForm({ occs, preOccId, currentUser, onSave, onCancel, editMeet = null, saving = false }) {
   const blank = { id: "", occupierId: preOccId || "", date: today(), type: "Leasing Review", attendees: currentUser.name, notes: "", actions: "", outcome: "Positive", department: "", followUpDate: "", relationshipOwner: currentUser.name };
   const [f, setF] = useState(editMeet ? { ...blank, id: editMeet.id, occupierId: editMeet.occupierId, date: editMeet.date, type: editMeet.type, attendees: editMeet.attendees || "", notes: editMeet.notes || "", actions: editMeet.actions || "", outcome: editMeet.outcome || "Positive", department: editMeet.department || "", followUpDate: editMeet.followUpDate || "", relationshipOwner: editMeet.relationshipOwner || "" } : blank);
   const [actionItems, setActionItems] = useState([]);
   const [newAI, setNewAI] = useState({ description: "", owner: "", dueDate: "", status: "Open" });
+  const [errors, setErrors] = useState({});
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const addAI = () => { if (!newAI.description.trim()) return; setActionItems(p => [...p, { ...newAI, id: genId() }]); setNewAI({ description: "", owner: "", dueDate: "", status: "Open" }); };
   return (
-    <div>
-      <div style={S.formGroup}><label style={S.label}>Occupier *</label>
+    <div style={{ position: "relative" }}>
+      {saving && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", borderRadius: 12, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, border: "3px solid rgba(255,255,255,0.2)", borderTop: "3px solid #E97132", borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{editMeet ? "Updating meeting…" : "Saving meeting…"}</div>
+        </div>
+      )}
+      <div style={S.formGroup}><label style={S.label}>Occupier <span style={{ color: "#ef4444" }}>*</span></label>
         {preOccId
           ? <div style={{ padding: "9px 12px", background: "var(--input-bg)", borderRadius: 9, fontSize: 13, fontWeight: 600, border: "1px solid var(--input-border)" }}>{occs.find(o => o.id === preOccId)?.name || "—"}</div>
-          : <Select value={f.occupierId} onChange={e => set("occupierId", e.target.value)}><option value="">Select occupier...</option>{occs.map(o => <option key={o.id} value={o.id}>{o.name} ({tierLabel(o.tier)})</option>)}</Select>}
+          : <Select value={f.occupierId} onChange={e => { set("occupierId", e.target.value); setErrors(p => ({ ...p, occupierId: "" })); }} style={{ borderColor: errors.occupierId ? "#ef4444" : undefined }}><option value="">Select occupier...</option>{occs.map(o => <option key={o.id} value={o.id}>{o.name} ({tierLabel(o.tier)})</option>)}</Select>}
+        {errors.occupierId && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.occupierId}</div>}
       </div>
       <div style={S.grid2}>
         <div style={S.formGroup}><label style={S.label}>Date *</label><Input type="date" value={f.date} onChange={e => set("date", e.target.value)} /></div>
@@ -1125,7 +1140,7 @@ function MeetingForm({ occs, preOccId, currentUser, onSave, onCancel, editMeet =
         <div style={S.formGroup}><label style={S.label}>Outcome</label><Select value={f.outcome} onChange={e => set("outcome", e.target.value)}>{OUTCOMES.map(o => <option key={o}>{o}</option>)}</Select></div>
       </div>
       <div style={S.formGroup}><label style={S.label}>Attendees</label><Input value={f.attendees} onChange={e => set("attendees", e.target.value)} /></div>
-      <div style={S.formGroup}><label style={S.label}>Meeting Notes *</label><Textarea value={f.notes} onChange={e => set("notes", e.target.value)} style={{ minHeight: 120 }} /></div>
+      <div style={S.formGroup}><label style={S.label}>Meeting Notes <span style={{ color: "#ef4444" }}>*</span></label><Textarea value={f.notes} onChange={e => { set("notes", e.target.value); if (errors.notes) setErrors(p => ({ ...p, notes: "" })); }} style={{ minHeight: 120, borderColor: errors.notes ? "#ef4444" : undefined }} />{errors.notes && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>{errors.notes}</div>}</div>
       {!editMeet && (
         <div style={S.formGroup}>
           <label style={S.label}>Action Items</label>
@@ -1146,9 +1161,10 @@ function MeetingForm({ occs, preOccId, currentUser, onSave, onCancel, editMeet =
         </div>
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn onClick={onCancel}>Cancel</Btn>
-        <Btn style={S.btnPrimary} onClick={() => { const occId = preOccId || f.occupierId; if (!occId || !f.notes.trim()) return; onSave({ ...f, id: f.id || genId(), occupierId: occId, newActionItems: editMeet ? [] : actionItems }); }}>
-          {editMeet ? "Update Meeting" : "Log Meeting"}
+        <Btn onClick={onCancel} disabled={saving}>Cancel</Btn>
+        <Btn style={{ ...S.btnPrimary, opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }} disabled={saving} onClick={() => { const occId = preOccId || f.occupierId; const errs = {}; if (!occId) errs.occupierId = "Please select an occupier"; if (!f.notes.trim()) errs.notes = "Meeting notes are required"; setErrors(errs); if (Object.keys(errs).length > 0) return; onSave({ ...f, id: f.id || genId(), occupierId: occId, newActionItems: editMeet ? [] : actionItems }); }}>
+          {saving && <div style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin .8s linear infinite", flexShrink: 0 }} />}
+          {saving ? (editMeet ? "Updating…" : "Saving…") : (editMeet ? "Update Meeting" : "Log Meeting")}
         </Btn>
       </div>
     </div>
@@ -1193,9 +1209,9 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
           </div>
         </div>
         <div style={S.grid3}>
-          <div style={S.statCard}><div style={S.statLabel}>Lease Expiry</div><div style={{ ...S.statValue, fontSize: 17 }}>{occ.leaseExpiry || "—"}</div>{months !== null && <div style={{ ...S.statSub, color: months < 12 ? "#991b1b" : months < 24 ? "#E97132" : "#196B24" }}>{months > 0 ? `${months} months away` : "Expired"}</div>}</div>
+          <div style={S.statCard}><div style={S.statLabel}>Lease Expiry</div><div style={{ ...S.statValue, fontSize: 17 }}>{fmtDate(occ.leaseExpiry)}</div>{months !== null && <div style={{ ...S.statSub, color: months < 12 ? "#991b1b" : months < 24 ? "#E97132" : "#196B24" }}>{months > 0 ? `${months} months away` : "Expired"}</div>}</div>
           <div style={S.statCard}><div style={S.statLabel}>Leased Area</div><div style={{ ...S.statValue, fontSize: 17 }}>{occ.sqft ? fmtNum(occ.sqft) : "—"}</div>{occ.sqft && <div style={S.statSub}>sq ft</div>}</div>
-          <div style={S.statCard}><div style={S.statLabel}>Meetings Logged</div><div style={S.statValue}>{occMeets.length}</div><div style={S.statSub}>{occMeets[0] ? `Last: ${occMeets[0].date}` : "None yet"}</div></div>
+          <div style={S.statCard}><div style={S.statLabel}>Meetings Logged</div><div style={S.statValue}>{occMeets.length}</div><div style={S.statSub}>{occMeets[0] ? `Last: ${fmtDate(occMeets[0].date)}` : "None yet"}</div></div>
         </div>
         {occ.notes && <div style={{ padding: "10px 14px", background: "var(--input-bg)", borderRadius: 8, fontSize: 13, lineHeight: 1.7, borderLeft: "3px solid #E97132", whiteSpace: "pre-wrap", marginTop: 12 }}>{occ.notes}</div>}
       </div>
@@ -1236,7 +1252,7 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
             <div key={m.id} style={S.meetingItem}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>{m.date}</strong>
+                  <strong style={{ fontSize: 13 }}>{fmtDate(m.date)}</strong>
                   <Badge label={m.type} bg="var(--card-border)" color="var(--text-muted)" />
                   <OutcomeBadge outcome={m.outcome || "Neutral"} />
                   {m.department && <Badge label={m.department} bg="rgba(15,158,213,0.1)" color="#0F9ED5" />}
@@ -1247,7 +1263,7 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
                 </div>
               </div>
               {m.attendees && <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>Attendees: {m.attendees}</div>}
-              {m.followUpDate && <div style={{ fontSize: 12, color: "#E97132", marginBottom: 4 }}>Follow-up: {m.followUpDate}</div>}
+              {m.followUpDate && <div style={{ fontSize: 12, color: "#E97132", marginBottom: 4 }}>Follow-up: {fmtDate(m.followUpDate)}</div>}
               <div style={{ fontSize: 13, lineHeight: 1.6, background: "var(--input-bg)", padding: 12, borderRadius: 8, borderLeft: "3px solid #156082", whiteSpace: "pre-wrap", marginBottom: 8 }}>{m.notes}</div>
               {meetAIs.length > 0 && (
                 <div style={{ background: "rgba(233,113,50,0.06)", padding: 12, borderRadius: 8, borderLeft: "3px solid #E97132" }}>
@@ -1258,12 +1274,12 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
                         ? <button onClick={() => onUpdateActionItem(ai.id, nx[ai.status])} style={{ background: ACTION_STATUS_BG[ai.status] || "#f3f4f6", color: ACTION_STATUS_COLOR[ai.status] || "#374151", border: "none", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{ai.status} →</button>
                         : <ActionStatusBadge status={ai.status} />}
                       <span style={{ flex: 1 }}>{ai.description}</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{ai.owner || "—"} · {ai.dueDate || "—"}</span>
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{ai.owner || "—"} · {fmtDate(ai.dueDate)}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {m.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}><Avatar name={m.createdBy} size={16} />Logged by {m.createdBy}{m.createdAt ? ` · ${fmtDateTime(m.createdAt)}` : ""}</div>}
+              {m.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}><Avatar name={m.createdBy} size={16} />Logged by {m.createdBy}{m.createdAt ? ` · ${fmtDate(m.createdAt)}` : ""}</div>}
             </div>
           );
         })}
@@ -1333,7 +1349,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
 
   return (
     <div>
-      {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 18 months:</strong> {expiring18.map(o => `${o.name} (${o.leaseExpiry})`).join(", ")}</div></div>}
+      {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 18 months:</strong> {expiring18.map(o => `${o.name} (${fmtDate(o.leaseExpiry)})`).join(", ")}</div></div>}
 
       <div style={{ ...S.grid4, marginBottom: 20 }}>
         <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "A").length} Tier A</div></div>
@@ -1441,7 +1457,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
                         <span style={{ fontWeight: 600, fontSize: 13, cursor: "pointer" }} onClick={() => occ && onGotoOcc(occ.id)}>{occ?.name || "Unknown"}</span>
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{m.date}</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{fmtDate(m.date)}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{m.type}{m.createdBy ? ` · by ${m.createdBy}` : ""}</div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(m.notes||"").replace(/\n/g," ")}</div>
@@ -1457,7 +1473,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
 }
 
 // ─── Calendar Tab ─────────────────────────────────────────────────────────────
-function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEvent }) {
+function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEvent, onGotoOcc }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -1477,7 +1493,13 @@ function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEve
   meets.forEach(m => { if (m.followUpDate) { const d = m.followUpDate.slice(0, 10); if (!eventsByDate[d]) eventsByDate[d] = []; const occ = occs.find(o => o.id === m.occupierId); eventsByDate[d].push({ id: m.id + "_fu", title: `Follow-up: ${occ?.name || "Meeting"}`, eventType: "Recurring Meeting", _kind: "followup" }); } });
   const selectedDayEvents = selectedDay ? (eventsByDate[selectedDay] || []) : [];
   const upcomingLimit = new Date(); upcomingLimit.setDate(upcomingLimit.getDate() + 30);
-  const upcomingEvents = [...events].filter(e => { const d = new Date(e.eventDate); return d >= new Date(todayStr) && d <= upcomingLimit; }).sort((a, b) => a.eventDate.localeCompare(b.eventDate));
+  const followUpEntries = meets.filter(m => m.followUpDate).map(m => {
+    const occ = occs.find(o => o.id === m.occupierId);
+    return { id: m.id + "_fu", title: `Follow-up: ${occ?.name || "Meeting"}`, eventDate: m.followUpDate, eventType: "Follow-up", occupierId: m.occupierId, _kind: "followup" };
+  });
+  const upcomingEvents = [...events.map(e => ({ ...e, _kind: "event" })), ...followUpEntries]
+    .filter(e => { const d = new Date(e.eventDate); return d >= new Date(todayStr) && d <= upcomingLimit; })
+    .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 
   return (
     <div>
@@ -1513,7 +1535,7 @@ function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEve
         <div>
           {selectedDay && (
             <div style={{ ...S.card, marginBottom: 16 }}>
-              <div style={{ ...S.sectionTitle, margin: "0 0 12px" }}>{selectedDay} — {selectedDayEvents.length} event{selectedDayEvents.length !== 1 ? "s" : ""}</div>
+              <div style={{ ...S.sectionTitle, margin: "0 0 12px" }}>{fmtDate(selectedDay)} — {selectedDayEvents.length} event{selectedDayEvents.length !== 1 ? "s" : ""}</div>
               {selectedDayEvents.length === 0
                 ? <div style={{ fontSize: 13, color: "var(--text-muted)", padding: 16, textAlign: "center" }}>No events on this day.</div>
                 : selectedDayEvents.map(ev => (
@@ -1523,6 +1545,7 @@ function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEve
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{ev.title}</div>
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{ev.eventType}</div>
                     </div>
+                    {ev._kind === "followup" && ev.occupierId && <Btn style={{ ...S.btnSm, fontSize: 11 }} onClick={() => onGotoOcc(ev.occupierId)}>View →</Btn>}
                     {!isReadOnly(currentUser, "calendar") && ev._kind === "event" && <Btn style={{ ...S.btnDanger, ...S.btnSm }} onClick={() => { if (window.confirm("Delete event?")) onDeleteEvent(ev.id); }}><Ic n="trash" size={12} /></Btn>}
                   </div>
                 ))}
@@ -1535,14 +1558,15 @@ function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEve
               ? <div style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: 16 }}>No upcoming events</div>
               : upcomingEvents.map(ev => {
                 const occ = ev.occupierId ? occs.find(o => o.id === ev.occupierId) : null;
+                const isFollowUp = ev._kind === "followup";
                 return (
-                  <div key={ev.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--divider)" }}>
+                  <div key={ev.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--divider)", cursor: isFollowUp ? "pointer" : "default" }} onClick={isFollowUp && ev.occupierId ? () => onGotoOcc(ev.occupierId) : undefined}>
                     <div style={{ width: 9, height: 9, borderRadius: "50%", background: EVENT_TYPE_COLORS[ev.eventType] || "#6b7280", flexShrink: 0, marginTop: 3 }} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{ev.title}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{ev.eventDate} · {ev.eventType}{occ ? ` · ${occ.name}` : ""}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: isFollowUp ? "#7c3aed" : "var(--text-strong)" }}>{ev.title}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{fmtDate(ev.eventDate)} · {ev.eventType}{occ && !isFollowUp ? ` · ${occ.name}` : ""}</div>
                     </div>
-                    {ev.recurrence && ev.recurrence !== "None" && <Badge label={ev.recurrence} bg="rgba(21,96,130,0.1)" color="#0F9ED5" />}
+                    {isFollowUp ? <span style={{ fontSize: 11, color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>View →</span> : ev.recurrence && ev.recurrence !== "None" && <Badge label={ev.recurrence} bg="rgba(21,96,130,0.1)" color="#0F9ED5" />}
                   </div>
                 );
               })}
@@ -1555,7 +1579,7 @@ function CalendarTab({ events, meets, occs, currentUser, onAddEvent, onDeleteEve
 }
 
 // ─── TAT Tracker Tab ──────────────────────────────────────────────────────────
-function TasksTab({ actionItems, meets, occs, currentUser, onUpdateStatus }) {
+function TasksTab({ actionItems, meets, occs, currentUser, onUpdateStatus, onGotoOcc }) {
   const [filterStatus, setFilterStatus] = useState("");
   const [filterOcc, setFilterOcc] = useState("");
   const nextStatus = { Open: "In Progress", "In Progress": "Closed", Closed: "Open" };
@@ -1626,11 +1650,11 @@ function TasksTab({ actionItems, meets, occs, currentUser, onUpdateStatus }) {
                             ? <button onClick={() => onUpdateStatus(ai.id, nextStatus[ai.status])} style={{ background: ACTION_STATUS_BG[ai.status]||"#f3f4f6", color: ACTION_STATUS_COLOR[ai.status]||"#374151", border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{ai.status} →</button>
                             : <ActionStatusBadge status={ai.status} />}
                         </td>
-                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{ai.occName}</td>
-                        <td style={{ padding: "10px 12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{ai.meetDate||"—"}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: 600, cursor: ai.occId ? "pointer" : "default", color: ai.occId ? "var(--app-color)" : "var(--text-strong)" }} onClick={() => ai.occId && onGotoOcc(ai.occId)}>{ai.occName}</td>
+                        <td style={{ padding: "10px 12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{fmtDate(ai.meetDate)}</td>
                         <td style={{ padding: "10px 12px" }}>{ai.description}</td>
                         <td style={{ padding: "10px 12px", color: "var(--text-muted)" }}>{ai.owner||"—"}</td>
-                        <td style={{ padding: "10px 12px", color: overdue ? "#ef4444" : "var(--text-muted)", fontWeight: overdue ? 700 : 400, whiteSpace: "nowrap" }}>{ai.dueDate||"—"}{overdue ? " !" : ""}</td>
+                        <td style={{ padding: "10px 12px", color: overdue ? "#ef4444" : "var(--text-muted)", fontWeight: overdue ? 700 : 400, whiteSpace: "nowrap" }}>{fmtDate(ai.dueDate)}{overdue ? " !" : ""}</td>
                       </tr>
                     );
                   })}
@@ -1719,7 +1743,7 @@ function AnalyticsTab({ occs, meets }) {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ borderBottom: "1px solid var(--border-med)" }}>{["Team Member","Meetings","Last Meeting","Occupiers"].map(h => <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>{h}</th>)}</tr></thead>
-            <tbody>{teamRows.length === 0 ? <tr><td colSpan={4} style={{ textAlign:"center",padding:24,color:"var(--text-muted)" }}>No data</td></tr> : teamRows.map(row => (<tr key={row.user} style={{ borderBottom: "1px solid var(--divider)" }}><td style={{ padding:"10px 12px" }}><div style={{ display:"flex",alignItems:"center",gap:8 }}><Avatar name={row.user} size={24} />{row.user}</div></td><td style={{ padding:"10px 12px",fontWeight:700 }}>{row.count}</td><td style={{ padding:"10px 12px",color:"var(--text-muted)" }}>{row.lastDate||"—"}</td><td style={{ padding:"10px 12px",fontWeight:600 }}>{row.occIds.size}</td></tr>))}</tbody>
+            <tbody>{teamRows.length === 0 ? <tr><td colSpan={4} style={{ textAlign:"center",padding:24,color:"var(--text-muted)" }}>No data</td></tr> : teamRows.map(row => (<tr key={row.user} style={{ borderBottom: "1px solid var(--divider)" }}><td style={{ padding:"10px 12px" }}><div style={{ display:"flex",alignItems:"center",gap:8 }}><Avatar name={row.user} size={24} />{row.user}</div></td><td style={{ padding:"10px 12px",fontWeight:700 }}>{row.count}</td><td style={{ padding:"10px 12px",color:"var(--text-muted)" }}>{fmtDate(row.lastDate)}</td><td style={{ padding:"10px 12px",fontWeight:600 }}>{row.occIds.size}</td></tr>))}</tbody>
           </table>
         </div>
       </div>
@@ -1737,7 +1761,7 @@ function AnalyticsTab({ occs, meets }) {
                 return (<tr key={row.id} style={{ borderBottom: "1px solid var(--divider)" }}>
                   <td style={{ padding:"10px 12px",fontWeight:600 }}>{row.name}</td>
                   <td style={{ padding:"10px 12px" }}><TierBadge tier={row.tier} /></td>
-                  <td style={{ padding:"10px 12px",color:"var(--text-muted)" }}>{row.lastDate||"Never"}</td>
+                  <td style={{ padding:"10px 12px",color:"var(--text-muted)" }}>{row.lastDate ? fmtDate(row.lastDate) : "Never"}</td>
                   <td style={{ padding:"10px 12px",fontWeight:600,color:row.daysSince&&row.daysSince>row.cadence?"#ef4444":"var(--text-strong)" }}>{row.daysSince!=null?`${row.daysSince}d`:"—"}</td>
                   <td style={{ padding:"10px 12px",color:"var(--text-muted)" }}>{row.cadence}d</td>
                   <td style={{ padding:"10px 12px" }}><Badge label={row.status} bg={sc+"22"} color={sc} /></td>
@@ -1767,6 +1791,7 @@ export default function App() {
   const [showOccForm, setShowOccForm] = useState(false);
   const [editOcc, setEditOcc] = useState(null);
   const [showMeetForm, setShowMeetForm] = useState(false);
+  const [meetSaving, setMeetSaving] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [preOccId, setPreOccId] = useState(null);
   const [editMeet, setEditMeet] = useState(null);
@@ -1823,10 +1848,10 @@ export default function App() {
         dispatch(fetchMeetingsThunk()),
         dispatch(fetchAuditThunk()),
       ]);
-      // Non-API entities → Supabase (contacts, action items, events, roles)
+      // Non-API entities → REST API (contacts, action items) + Supabase (events, roles)
       const [cR, aiR, evR, rR] = await Promise.all([
         api.get("/contacts").then(r => ({ data: r.data?.data || [] })).catch(() => ({ data: [] })),
-        supabase.from("action_items").select("*").then(r => r).catch(() => ({ data: null })),
+        api.get("/action-items").then(r => ({ data: r.data?.data || [] })).catch(() => ({ data: [] })),
         supabase.from("engagement_events").select("*").order("event_date", { ascending: true }).then(r => r).catch(() => ({ data: null })),
         supabase.from("roles").select("*").then(r => r).catch(() => ({ data: null })),
       ]);
@@ -1977,39 +2002,53 @@ export default function App() {
 
   const handleSaveMeet = async (m) => {
     if (isReadOnly(currentUser, "meetings")) return;
+    setMeetSaving(true);
     const occName = occs.find(o => o.id === m.occupierId)?.name || "Unknown";
     const isEdit = meets.some(x => x.id === m.id);
-    if (isEdit) {
-      // Meeting PATCH not in REST API — keep Supabase, then re-sync
-      const dbMeet = { occupier_id: m.occupierId, meeting_date: m.date, meeting_type: m.type, attendees: m.attendees, notes: m.notes, actions: m.actions, outcome: m.outcome, department: m.department, follow_up_date: m.followUpDate || null, relationship_owner: m.relationshipOwner };
-      await supabase.from("meetings").update(dbMeet).eq("id", m.id);
-      await dispatch(fetchMeetingsThunk());
-      addAudit(currentUser.name, "edited meeting for", occName);
-    } else {
-      const result = await dispatch(createMeetingThunk({
-        occupier_id: m.occupierId,
-        notes: m.notes,
-        meeting_date: m.date || undefined,
-        meeting_type: m.type || undefined,
-        attendees: m.attendees || undefined,
-        actions: m.actions || undefined,
-        outcome: m.outcome || undefined,
-        department: m.department || undefined,
-        follow_up_date: m.followUpDate || undefined,
-        relationship_owner: m.relationshipOwner || undefined,
-        created_by: currentUser.name,
-      }));
-      if (createMeetingThunk.fulfilled.match(result)) {
-        const created = result.payload?.[0];
-        if (created?.id && m.newActionItems?.length > 0) {
-          const aiRows = m.newActionItems.map(ai => ({ meeting_id: created.id, description: ai.description, owner: ai.owner, due_date: ai.dueDate || null, status: ai.status, created_at: tsNow(), updated_at: tsNow() }));
-          const { data: aiData } = await supabase.from("action_items").insert(aiRows).select();
-          if (aiData) setActionItems(p => [...p, ...aiData.map(mapActionItem)]);
+    try {
+      if (isEdit) {
+        const res = await api.put(`/meetings/${m.id}`, {
+          occupier_id: m.occupierId, meeting_date: m.date, meeting_type: m.type,
+          attendees: m.attendees, notes: m.notes, actions: m.actions,
+          outcome: m.outcome, department: m.department,
+          follow_up_date: m.followUpDate || null, relationship_owner: m.relationshipOwner,
+        });
+        if (res.data?.data) {
+          await dispatch(fetchMeetingsThunk());
+          addAudit(currentUser.name, "edited meeting for", occName);
         }
-        addAudit(currentUser.name, "logged meeting for", occName);
+      } else {
+        const result = await dispatch(createMeetingThunk({
+          occupier_id: m.occupierId,
+          notes: m.notes,
+          meeting_date: m.date || undefined,
+          meeting_type: m.type || undefined,
+          attendees: m.attendees || undefined,
+          actions: m.actions || undefined,
+          outcome: m.outcome || undefined,
+          department: m.department || undefined,
+          follow_up_date: m.followUpDate || undefined,
+          relationship_owner: m.relationshipOwner || undefined,
+          created_by: currentUser.name,
+        }));
+        if (createMeetingThunk.fulfilled.match(result)) {
+          const created = result.payload?.[0];
+          if (created?.id && m.newActionItems?.length > 0) {
+            try {
+              const aiRows = m.newActionItems.map(ai => ({ meeting_id: created.id, description: ai.description, owner: ai.owner || null, due_date: ai.dueDate || null, status: ai.status }));
+              const aiRes = await api.post("/action-items", aiRows);
+              if (aiRes.data?.data) setActionItems(p => [...p, ...aiRes.data.data.map(mapActionItem)]);
+            } catch { toast.error("Meeting saved but action items failed to save."); }
+          }
+          addAudit(currentUser.name, "logged meeting for", occName);
+        }
       }
+      setShowMeetForm(false); setPreOccId(null); setEditMeet(null);
+    } catch (err) {
+      toast.error("Failed to save meeting.");
+    } finally {
+      setMeetSaving(false);
     }
-    setShowMeetForm(false); setPreOccId(null); setEditMeet(null);
   };
 
   const handleDeleteMeet = async (id) => {
@@ -2017,7 +2056,6 @@ export default function App() {
     const m = meets.find(x => x.id === id);
     const occName = occs.find(o => o.id === m?.occupierId)?.name || "Unknown";
     await dispatch(deleteMeetingThunk(id));
-    await supabase.from("action_items").delete().eq("meeting_id", id);
     setActionItems(p => p.filter(a => a.meetingId !== id));
     addAudit(currentUser.name, "deleted meeting from", occName);
   };
@@ -2092,8 +2130,10 @@ export default function App() {
 
   const handleUpdateActionItem = async (id, newStatus) => {
     if (isReadOnly(currentUser, "tasks")) return;
-    await supabase.from("action_items").update({ status: newStatus, updated_at: tsNow() }).eq("id", id);
-    setActionItems(p => p.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    try {
+      await api.patch(`/action-items/${id}`, { status: newStatus });
+      setActionItems(p => p.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    } catch { toast.error("Failed to update action item."); }
   };
 
   const handleAddRole = async ({ name, permissions }) => {
@@ -2240,7 +2280,7 @@ export default function App() {
                           <div style={{ width: 120, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.city || "—"}</div>
                           <div style={{ width: 90, fontSize: 12, fontWeight: 600, color: RISK_COLOR[o.risk] }} onClick={() => setSelectedOccId(o.id)}>{o.risk || "—"}</div>
                           <div style={{ width: 80, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{o.gccClassification || "—"}</div>
-                          <div style={{ width: 100, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{last ? last.date : "None"}</div>
+                          <div style={{ width: 100, fontSize: 12, color: "var(--text-muted)" }} onClick={() => setSelectedOccId(o.id)}>{last ? fmtDate(last.date) : "None"}</div>
                           <div style={{ width: 80 }} onClick={() => setSelectedOccId(o.id)}>{o.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Avatar name={o.createdBy} size={18} /><span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 50 }}>{o.createdBy.split(" ")[0]}</span></div>}</div>
                           <div style={{ width: 20, color: "var(--text-muted)", fontSize: 14, cursor: "pointer" }} onClick={() => setSelectedOccId(o.id)}>›</div>
                         </div>
@@ -2295,9 +2335,9 @@ export default function App() {
                               {m.department && <Badge label={m.department} bg="rgba(15,158,213,0.1)" color="#0F9ED5" />}
                             </div>
                             <div style={{ display: "flex", gap: 10, fontSize: 12, color: "var(--text-muted)" }}>
-                              <span>{m.date}</span><span>{m.type}</span>
+                              <span>{fmtDate(m.date)}</span><span>{m.type}</span>
                               {m.attendees && <span>{m.attendees}</span>}
-                              {m.followUpDate && <span style={{ color: "#E97132" }}>Follow-up: {m.followUpDate}</span>}
+                              {m.followUpDate && <span style={{ color: "#E97132" }}>Follow-up: {fmtDate(m.followUpDate)}</span>}
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
@@ -2316,20 +2356,20 @@ export default function App() {
                                   ? <button onClick={() => handleUpdateActionItem(ai.id, nx[ai.status])} style={{ background: ACTION_STATUS_BG[ai.status]||"#f3f4f6", color: ACTION_STATUS_COLOR[ai.status]||"#374151", border: "none", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{ai.status} →</button>
                                   : <ActionStatusBadge status={ai.status} />}
                                 <span style={{ flex: 1 }}>{ai.description}</span>
-                                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{ai.owner||"—"} · {ai.dueDate||"—"}</span>
+                                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{ai.owner||"—"} · {fmtDate(ai.dueDate)}</span>
                               </div>
                             ))}
                           </div>
                         )}
-                        {m.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}><Avatar name={m.createdBy} size={16} />Logged by {m.createdBy}{m.createdAt ? ` · ${fmtDateTime(m.createdAt)}` : ""}</div>}
+                        {m.createdBy && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}><Avatar name={m.createdBy} size={16} />Logged by {m.createdBy}{m.createdAt ? ` · ${fmtDate(m.createdAt)}` : ""}</div>}
                       </div>
                     );
                   })}
               </div>
             )}
 
-            {tab === "tasks" && <TasksTab actionItems={actionItems} meets={meets} occs={occs} currentUser={currentUser} onUpdateStatus={handleUpdateActionItem} />}
-            {tab === "calendar" && <CalendarTab events={events} meets={meets} occs={occs} currentUser={currentUser} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} />}
+            {tab === "tasks" && <TasksTab actionItems={actionItems} meets={meets} occs={occs} currentUser={currentUser} onUpdateStatus={handleUpdateActionItem} onGotoOcc={gotoOcc} />}
+            {tab === "calendar" && <CalendarTab events={events} meets={meets} occs={occs} currentUser={currentUser} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onGotoOcc={gotoOcc} />}
             {tab === "analytics" && <AnalyticsTab occs={occs} meets={meets} />}
             {tab === "rbac" && canSeeModule(currentUser, "rbac") && <RolesTab roles={roles} currentUser={currentUser} onAddRole={handleAddRole} onDeleteRole={handleDeleteRole} />}
             {tab === "users" && canSeeModule(currentUser, "users") && <UsersTab users={users} roles={roles} audit={audit} currentUser={currentUser} onAddUser={handleAddUser} onResetOTP={handleResetOTP} onToggleActive={handleToggleActive} onToggleAdmin={handleToggleAdmin} />}
@@ -2353,7 +2393,7 @@ export default function App() {
         <div style={S.modalOverlay} onClick={e => { if (e.target === e.currentTarget) { setShowMeetForm(false); setPreOccId(null); setEditMeet(null); } }}>
           <div style={{ ...S.modal, maxWidth: 720 }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "var(--text-strong)" }}>{editMeet ? "Edit Meeting" : "Log Meeting"}</h2>
-            <MeetingForm occs={occs} preOccId={preOccId} currentUser={currentUser} onSave={handleSaveMeet} onCancel={() => { setShowMeetForm(false); setPreOccId(null); setEditMeet(null); }} editMeet={editMeet} />
+            <MeetingForm occs={occs} preOccId={preOccId} currentUser={currentUser} onSave={handleSaveMeet} onCancel={() => { setShowMeetForm(false); setPreOccId(null); setEditMeet(null); }} editMeet={editMeet} saving={meetSaving} />
           </div>
         </div>
       )}

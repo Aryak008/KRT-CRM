@@ -853,6 +853,17 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
               : String(rawVal).trim();
           });
           const rowNum = idx + 2;
+          // Normalize enum fields before validation (handle any casing from user Excel)
+          const normFirst = s => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+          r.tier = r.tier ? r.tier.toUpperCase().trim() : "";
+          r.risk = normFirst(r.risk);
+          r.depth = normFirst(r.depth);
+          if (r.gcc_classification) {
+            const g = r.gcc_classification.toLowerCase().replace(/[-\s]/g, "");
+            if (g === "gcc") r.gcc_classification = "GCC";
+            else if (g === "nongcc") r.gcc_classification = "Non-GCC";
+          }
+
           if (!r.name) errs.push(`Row ${rowNum}: Name is required`);
           if (r.tier && !TIERS.includes(r.tier)) {
             errs.push(`Row ${rowNum}: Invalid tier "${r.tier}" — expected A, B or C, defaulted to B`);
@@ -863,9 +874,9 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
             r.risk = "";
           }
           if (r.depth && !DEPTHS.includes(r.depth)) {
-            errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — expected High, Medium or Low, defaulted to Medium`);
-            r.depth = "Medium";
-          } else if (!r.depth) { r.depth = "Medium"; }
+            errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — expected High, Medium or Low, value cleared`);
+            r.depth = "";
+          }
           if (r.sqft && isNaN(parseInt(r.sqft))) {
             errs.push(`Row ${rowNum}: sqft "${r.sqft}" is not a number — will be skipped`);
             r.sqft = "";
@@ -1008,7 +1019,10 @@ function OccupierForm({ occ, currentUser, onSave, onCancel }) {
         <div style={S.formGroup}><label style={S.label}>Tier *</label><Select value={f.tier} onChange={e => set("tier", e.target.value)}>{TIERS.map(t => <option key={t} value={t}>{tierLabel(t)}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
-        <div style={S.formGroup}><label style={S.label}>Relationship Depth</label><Select value={f.depth} onChange={e => set("depth", e.target.value)}>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select></div>
+        <div style={S.formGroup}><label style={S.label}>Relationship Depth</label><Select value={f.depth || ""} onChange={e => set("depth", e.target.value)}><option value="">Select...</option>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select></div>
+        <div style={S.formGroup}><label style={S.label}>Risk</label><Select value={f.risk || ""} onChange={e => set("risk", e.target.value)}><option value="">Select...</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select></div>
+      </div>
+      <div style={S.grid2}>
         <div style={S.formGroup}><label style={S.label}>Sector</label><Select value={f.sector} onChange={e => set("sector", e.target.value)}><option value="">Select...</option>{SECTORS.map(s => <option key={s}>{s}</option>)}</Select></div>
       </div>
       <div style={S.grid2}>
@@ -2243,8 +2257,7 @@ export default function App() {
                     <Input style={{ ...S.toolbarInput, paddingLeft: 14 }} placeholder="Search by name or city..." value={search} onChange={e => setSearch(e.target.value)} />
                   </div>
                   <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterTier} onChange={e => setFilterTier(e.target.value)}><option value="">All tiers</option>{TIERS.map(t => <option key={t} value={t}>{tierLabel(t)}</option>)}</Select>
-                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterDepth} onChange={e => setFilterDepth(e.target.value)}><option value="">All depths</option>{DEPTHS.map(d => <option key={d}>{d}</option>)}</Select>
-                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterRisk} onChange={e => setFilterRisk(e.target.value)}><option value="">All rel. depth</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select>
+                  <Select style={{ ...S.toolbarSelect, width: "auto" }} value={filterRisk} onChange={e => setFilterRisk(e.target.value)}><option value="">All risks</option>{RISK.map(r => <option key={r}>{r}</option>)}</Select>
                   {canWrite(currentUser, "occupiers") && (
                     <>
                       <Btn style={{ ...S.btnSecondary, ...S.toolbarBtn }} onClick={() => setShowBulkUpload(true)}><Ic n="upload" size={14} /> Bulk Upload</Btn>
@@ -2258,7 +2271,7 @@ export default function App() {
                 <div style={{ ...S.card, padding: "6px 10px" }}>
                   <div style={{ display: "flex", alignItems: "center", padding: "4px 10px 8px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", gap: 10, borderBottom: "1px solid var(--divider)" }}>
                     {currentUser.isAdmin && <div style={{ width: 22 }}><input type="checkbox" checked={filteredOccs.length > 0 && filteredOccs.every(o => selectedOccIds.has(o.id))} onChange={e => { if (e.target.checked) setSelectedOccIds(new Set(filteredOccs.map(o => o.id))); else setSelectedOccIds(new Set()); }} /></div>}
-                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 90 }}>Rel. Depth</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
+                    <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 90 }}>Risk</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
                   </div>
                   {filteredOccs.length === 0
                     ? <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)", fontSize: 13 }}>No occupiers match your filters</div>

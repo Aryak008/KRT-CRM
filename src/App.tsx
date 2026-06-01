@@ -849,7 +849,7 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
                 return kl === lbl || kl === baseLbl;
               })?.[1] ?? "";
             r[c.key] = rawVal instanceof Date
-              ? rawVal.toISOString().split("T")[0]
+              ? `${rawVal.getFullYear()}-${String(rawVal.getMonth()+1).padStart(2,"0")}-${String(rawVal.getDate()).padStart(2,"0")}`
               : String(rawVal).trim();
           });
           const rowNum = idx + 2;
@@ -859,9 +859,9 @@ function BulkUploadModal({ currentUser, onUpload, onCancel }) {
             r.tier = "B";
           } else if (!r.tier) { r.tier = "B"; }
           if (r.risk && !RISK.includes(r.risk)) {
-            errs.push(`Row ${rowNum}: Invalid risk "${r.risk}" — defaulted to Low`);
-            r.risk = "Low";
-          } else if (!r.risk) { r.risk = "Low"; }
+            errs.push(`Row ${rowNum}: Invalid risk "${r.risk}" — value cleared`);
+            r.risk = "";
+          }
           if (r.depth && !DEPTHS.includes(r.depth)) {
             errs.push(`Row ${rowNum}: Invalid depth "${r.depth}" — expected High, Medium or Low, defaulted to Medium`);
             r.depth = "Medium";
@@ -1189,7 +1189,7 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
               <span style={{ fontSize: 20, fontWeight: 700, color: "var(--text-strong)" }}>{occ.name}</span>
               <TierBadge tier={occ.tier} />
               <DepthBadge depth={occ.depth} />
-              {occ.risk && <Badge label={`${occ.risk} depth`} bg={occ.risk === "High" ? "rgba(25,107,36,0.1)" : occ.risk === "Medium" ? "rgba(233,113,50,0.1)" : "rgba(239,68,68,0.1)"} color={RISK_COLOR[occ.risk]} />}
+              {occ.risk && <Badge label={`${occ.risk} Risk`} bg={occ.risk === "High" ? "rgba(25,107,36,0.1)" : occ.risk === "Medium" ? "rgba(233,113,50,0.1)" : "rgba(239,68,68,0.1)"} color={RISK_COLOR[occ.risk]} />}
               {occ.renewalStatus && <Badge label={occ.renewalStatus} bg="rgba(21,96,130,0.1)" color="#156082" />}
               {occ.gccClassification && <Badge label={occ.gccClassification} bg="rgba(15,158,213,0.1)" color="#0F9ED5" />}
             </div>
@@ -1212,6 +1212,8 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
           <div style={S.statCard}><div style={S.statLabel}>Lease Expiry</div><div style={{ ...S.statValue, fontSize: 17 }}>{fmtDate(occ.leaseExpiry)}</div>{months !== null && <div style={{ ...S.statSub, color: months < 12 ? "#991b1b" : months < 24 ? "#E97132" : "#196B24" }}>{months > 0 ? `${months} months away` : "Expired"}</div>}</div>
           <div style={S.statCard}><div style={S.statLabel}>Leased Area</div><div style={{ ...S.statValue, fontSize: 17 }}>{occ.sqft ? fmtNum(occ.sqft) : "—"}</div>{occ.sqft && <div style={S.statSub}>sq ft</div>}</div>
           <div style={S.statCard}><div style={S.statLabel}>Meetings Logged</div><div style={S.statValue}>{occMeets.length}</div><div style={S.statSub}>{occMeets[0] ? `Last: ${fmtDate(occMeets[0].date)}` : "None yet"}</div></div>
+          <div style={S.statCard}><div style={S.statLabel}>Risk Level</div><div style={{ ...S.statValue, fontSize: 17, color: RISK_COLOR[occ.risk] || "var(--text-strong)" }}>{occ.risk || "—"}</div></div>
+          <div style={S.statCard}><div style={S.statLabel}>Relationship Since</div><div style={{ ...S.statValue, fontSize: 17 }}>{occ.relationshipTenure || "—"}</div></div>
         </div>
         {occ.notes && <div style={{ padding: "10px 14px", background: "var(--input-bg)", borderRadius: 8, fontSize: 13, lineHeight: 1.7, borderLeft: "3px solid #E97132", whiteSpace: "pre-wrap", marginTop: 12 }}>{occ.notes}</div>}
       </div>

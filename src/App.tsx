@@ -33,7 +33,7 @@ const TIER_CADENCE = { A: 30, B: 90, C: 180 };
 const DEPTHS = ["High", "Medium", "Low"];
 const MTYPES = ["Leasing Review", "Operations Review", "Management Connect", "CXO Connect", "Asset Walkthrough", "Occupier Connect Event", "Other"];
 const OUTCOMES = ["Positive", "Neutral", "Concerning", "Action Required"];
-const RISK = ["Low", "Medium", "High"];
+const RISK = ["No", "Low", "Medium", "High"];
 const DEPARTMENTS = ["Leasing", "Operations", "Portfolio Operations", "Marketing", "Management", "CXO", "Other"];
 const GCC_OPTIONS = ["GCC", "Non-GCC"];
 const RENEWAL_STATUSES = ["Active", "Up for Renewal", "Expanding", "At Risk", "Exited"];
@@ -119,7 +119,7 @@ const DEPTH_BG = { High: "#dbeafe", Medium: "#fef9c3", Low: "#fee2e2" };
 const DEPTH_TEXT = { High: "#1e3a8a", Medium: "#854d0e", Low: "#991b1b" };
 const OUTCOME_BG = { Positive: "#d1fae5", Neutral: "#f3f4f6", Concerning: "#fee2e2", "Action Required": "#fef3c7" };
 const OUTCOME_TEXT = { Positive: "#065f46", Neutral: "#374151", Concerning: "#991b1b", "Action Required": "#92400e" };
-const RISK_COLOR = { Low: "#196B24", Medium: "#854d0e", High: "#991b1b" };
+const RISK_COLOR = { No: "#6b7280", Low: "#196B24", Medium: "#854d0e", High: "#991b1b" };
 const ACTION_STATUS_BG = { Open: "#fee2e2", "In Progress": "#fef9c3", Closed: "#d1fae5" };
 const ACTION_STATUS_COLOR = { Open: "#991b1b", "In Progress": "#854d0e", Closed: "#196B24" };
 const HEALTH_COLOR = { High: "#156082", Medium: "#E97132", Low: "#e74c3c" };
@@ -1203,7 +1203,7 @@ function OccupierDetail({ occ, meets, contacts, actionItems, currentUser, onBack
               <span style={{ fontSize: 20, fontWeight: 700, color: "var(--text-strong)" }}>{occ.name}</span>
               <TierBadge tier={occ.tier} />
               <DepthBadge depth={occ.depth} />
-              {occ.risk && <Badge label={`${occ.risk} Risk`} bg={occ.risk === "High" ? "rgba(25,107,36,0.1)" : occ.risk === "Medium" ? "rgba(233,113,50,0.1)" : "rgba(239,68,68,0.1)"} color={RISK_COLOR[occ.risk]} />}
+              {occ.risk && <Badge label={`${occ.risk} Risk`} bg={occ.risk === "High" ? "rgba(153,27,27,0.1)" : occ.risk === "Medium" ? "rgba(233,113,50,0.1)" : occ.risk === "Low" ? "rgba(25,107,36,0.1)" : "rgba(107,114,128,0.1)"} color={RISK_COLOR[occ.risk]} />}
               {occ.renewalStatus && <Badge label={occ.renewalStatus} bg="rgba(21,96,130,0.1)" color="#156082" />}
               {occ.gccClassification && <Badge label={occ.gccClassification} bg="rgba(15,158,213,0.1)" color="#0F9ED5" />}
             </div>

@@ -1335,7 +1335,10 @@ function EventModal({ occs, currentUser, defaultDate, onSave, onCancel }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   const total = occs.length;
-  const expiring18 = occs.filter(o => { const m = leaseMonths(o.leaseExpiry); return m !== null && m <= 6 && m > 0; });
+  const [expiredLast6m, setExpiredLast6m] = useState<number | null>(null);
+  useEffect(() => {
+    api.get("/occupiers/stats").then(r => setExpiredLast6m(r.data?.data?.expired_last_6m ?? 0)).catch(() => setExpiredLast6m(0));
+  }, []);
   const recent = [...meets].sort((a, b) => (b.createdAt || b.date).localeCompare(a.createdAt || a.date)).slice(0, 6);
   const tierCounts = TIERS.map(t => ({ t, n: occs.filter(o => o.tier === t).length }));
   const depthCounts = DEPTHS.map(d => ({ d, n: occs.filter(o => o.depth === d).length }));
@@ -1366,11 +1369,14 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   return (
     <div>
 
+      {expiredLast6m !== null && expiredLast6m > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiredLast6m} lease{expiredLast6m > 1 ? "s" : ""} expired in the last 6 months.</strong> Review the Occupiers tab for details.</div></div>}
+
       <div style={{ ...S.grid4, marginBottom: 20 }}>
         <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "A").length} Tier A</div></div>
         <div style={S.statCard}><div style={S.statLabel}>Meetings Logged</div><div style={S.statValue}>{meets.length}</div><div style={S.statSub}>Across all accounts</div></div>
         <div style={S.statCard}><div style={S.statLabel}>Low Depth Accounts</div><div style={{ ...S.statValue, color: occs.filter(o => o.depth === "Low").length > 0 ? "#991b1b" : "#196B24" }}>{occs.filter(o => o.depth === "Low").length}</div><div style={S.statSub}>Relationship depth: Low</div></div>
         <div style={S.statCard}><div style={S.statLabel}>Avg Relationship Depth</div><div style={{ ...S.statValue, fontSize: 16, paddingTop: 4 }}>{avgLabel}</div><div style={S.statSub}>{avgD.toFixed(1)} / 3.0</div></div>
+        {expiredLast6m !== null && expiredLast6m > 0 && <div style={S.statCard}><div style={S.statLabel}>Leases Expired (Last 6 Months)</div><div style={{ ...S.statValue, color: "#991b1b" }}>{expiredLast6m}</div><div style={S.statSub}>From database</div></div>}
       </div>
 
       <div style={S.card}>

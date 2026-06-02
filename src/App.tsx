@@ -1335,7 +1335,7 @@ function EventModal({ occs, currentUser, defaultDate, onSave, onCancel }) {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
   const total = occs.length;
-  const expiring18 = occs.filter(o => { const m = leaseMonths(o.leaseExpiry); return m !== null && m <= 18 && m > 0; });
+  const expiring18 = occs.filter(o => { const m = leaseMonths(o.leaseExpiry); return m !== null && m <= 6 && m > 0; });
   const recent = [...meets].sort((a, b) => (b.createdAt || b.date).localeCompare(a.createdAt || a.date)).slice(0, 6);
   const tierCounts = TIERS.map(t => ({ t, n: occs.filter(o => o.tier === t).length }));
   const depthCounts = DEPTHS.map(d => ({ d, n: occs.filter(o => o.depth === d).length }));
@@ -1365,7 +1365,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
 
   return (
     <div>
-      {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 18 months.</strong> Review the Occupiers tab for details.</div></div>}
+      {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 6 months.</strong> Review the Occupiers tab for details.</div></div>}
 
       <div style={{ ...S.grid4, marginBottom: 20 }}>
         <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "A").length} Tier A</div></div>

@@ -1365,7 +1365,6 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
 
   return (
     <div>
-      {expiring18.length > 0 && <div style={S.alertWarn}><Ic n="warning" size={15} /><div><strong>{expiring18.length} lease{expiring18.length > 1 ? "s" : ""} expiring within 6 months.</strong> Review the Occupiers tab for details.</div></div>}
 
       <div style={{ ...S.grid4, marginBottom: 20 }}>
         <div style={S.statCard}><div style={S.statLabel}>Total Occupiers</div><div style={S.statValue}>{total}</div><div style={S.statSub}>{occs.filter(o => o.tier === "A").length} Tier A</div></div>

@@ -306,9 +306,9 @@ const S = {
   select: { width: "100%", padding: "11px 14px", fontSize: 14, border: "1px solid var(--input-border)", borderRadius: 9, background: "var(--input-bg)", color: "var(--text-strong)", fontFamily: "inherit", outline: "none", boxSizing: "border-box" },
   label: { display: "block", fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em" },
   formGroup: { marginBottom: 18 },
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 },
-  grid3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 18 },
-  grid4: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 },
+  grid2: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 18 },
+  grid3: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)", gap: 18 },
+  grid4: { display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 16 },
   divider: { height: 1, background: "var(--divider)", margin: "20px 0" },
   occRow: { display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderRadius: 10, cursor: "pointer", border: "1px solid transparent", transition: "all .2s" },
   badge: { display: "inline-block", padding: "4px 11px", borderRadius: 20, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" },
@@ -551,11 +551,15 @@ function LoginScreen({ users, onLogin }) {
 }
 
 // ─── RBAC: Roles Tab ──────────────────────────────────────────────────────────
-function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
+function RolesTab({ roles, currentUser, onAddRole, onDeleteRole, onUpdateRole }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingRole, setEditingRole] = useState(null);
   const [roleName, setRoleName] = useState("");
   const [permissions, setPermissions] = useState({});
   const [err, setErr] = useState("");
+
+  const openCreate = () => { setEditingRole(null); setRoleName(""); setPermissions({}); setErr(""); setShowForm(true); };
+  const openEdit = (r) => { setEditingRole(r); setRoleName(r.name); setPermissions(r.permissions || {}); setErr(""); setShowForm(true); };
 
   const togglePerm = (modId, type) => {
     setPermissions(prev => {
@@ -571,10 +575,14 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
   const submit = async () => {
     setErr("");
     if (!roleName.trim()) return setErr("Role name is required.");
-    if (roles.some(r => r.name.toLowerCase() === roleName.trim().toLowerCase())) return setErr("Role name already exists.");
+    if (!editingRole && roles.some(r => r.name.toLowerCase() === roleName.trim().toLowerCase())) return setErr("Role name already exists.");
     try {
-      await onAddRole({ name: roleName.trim(), permissions });
-      setRoleName(""); setPermissions({}); setShowForm(false);
+      if (editingRole) {
+        await onUpdateRole(editingRole.id, { name: roleName.trim(), permissions });
+      } else {
+        await onAddRole({ name: roleName.trim(), permissions });
+      }
+      setRoleName(""); setPermissions({}); setShowForm(false); setEditingRole(null);
     } catch (e) {
       setErr("Failed to save role: " + (e?.message || "unknown error"));
     }
@@ -584,7 +592,7 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div style={S.pageTitle}>Roles & Permissions</div>
-        {canWrite(currentUser, "rbac") && <Btn style={S.btnPrimary} onClick={() => { setShowForm(true); setErr(""); }}><Ic n="plus" size={14} /> New Role</Btn>}
+        {canWrite(currentUser, "rbac") && <Btn style={S.btnPrimary} onClick={openCreate}><Ic n="plus" size={14} /> New Role</Btn>}
       </div>
       <div style={S.card}>
         {roles.length === 0
@@ -607,7 +615,10 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>Created by {r.createdBy || "—"}</div>
               {canWrite(currentUser, "rbac") && (
-                <Btn style={{ ...S.btnDanger, ...S.btnSm }} onClick={() => { if (window.confirm(`Delete role "${r.name}"?`)) onDeleteRole(r.id); }}><Ic n="trash" size={12} /></Btn>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Btn style={S.btnSm} onClick={() => openEdit(r)}><Ic n="edit" size={12} /> Edit</Btn>
+                  <Btn style={{ ...S.btnDanger, ...S.btnSm }} onClick={() => { if (window.confirm(`Delete role "${r.name}"?`)) onDeleteRole(r.id); }}><Ic n="trash" size={12} /></Btn>
+                </div>
               )}
             </div>
           ))}
@@ -616,7 +627,7 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
       {showForm && (
         <div style={S.modalOverlay} onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }}>
           <div style={{ ...S.modal, maxWidth: 680 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "var(--text-strong)" }}>Create Role</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "var(--text-strong)" }}>{editingRole ? "Edit Role" : "Create Role"}</h2>
             {err && <div style={S.alertRed}><Ic n="warning" size={14} /><div>{err}</div></div>}
             <div style={S.formGroup}><label style={S.label}>Role Name *</label><Input value={roleName} onChange={e => setRoleName(e.target.value)} autoFocus placeholder="e.g. Leasing Manager" /></div>
             <div style={{ ...S.sectionTitle, marginBottom: 12 }}>Module Permissions</div>
@@ -645,8 +656,8 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
               })}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Btn onClick={() => setShowForm(false)}>Cancel</Btn>
-              <Btn style={S.btnPrimary} onClick={submit}>Create Role</Btn>
+              <Btn onClick={() => { setShowForm(false); setEditingRole(null); }}>Cancel</Btn>
+              <Btn style={S.btnPrimary} onClick={submit}>{editingRole ? "Save Changes" : "Create Role"}</Btn>
             </div>
           </div>
         </div>
@@ -656,8 +667,13 @@ function RolesTab({ roles, currentUser, onAddRole, onDeleteRole }) {
 }
 
 // ─── Users Tab ────────────────────────────────────────────────────────────────
-function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onToggleActive, onToggleAdmin }) {
+function UsersTab({ users, roles, audit, currentUser, onAddUser, onUpdateUser, onResetOTP, onToggleActive, onToggleAdmin }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editErr, setEditErr] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
@@ -711,6 +727,7 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
             </div>
             {currentUser.isAdmin && u.id !== currentUser.id && (
               <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+                <Btn style={S.btnSm} onClick={() => { setEditingUser(u); setEditName(u.name); setEditRole(u.role || ""); setEditEmail(u.email || ""); setEditErr(""); }}><Ic n="edit" size={13} /> Edit</Btn>
                 <Btn style={S.btnSm} onClick={() => onToggleAdmin(u.id)}>{u.isAdmin ? "Demote" : "Make Admin"}</Btn>
                 <Btn style={{ ...S.btnSm, ...(u.active === false ? S.btnSecondary : S.btnDanger) }} onClick={() => onToggleActive(u.id)}>{u.active === false ? "Reactivate" : "Deactivate"}</Btn>
               </div>
@@ -773,6 +790,38 @@ function UsersTab({ users, roles, audit, currentUser, onAddUser, onResetOTP, onT
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Btn onClick={() => setShowForm(false)}>Cancel</Btn>
               <Btn style={S.btnPrimary} onClick={submitAdd}>Create User</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit user modal */}
+      {editingUser && (
+        <div style={S.modalOverlay} onClick={e => { if (e.target === e.currentTarget) setEditingUser(null); }}>
+          <div style={{ ...S.modal, maxWidth: 460 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, color: "var(--text-strong)" }}>Edit User</h2>
+            {editErr && <div style={S.alertRed}><Ic n="warning" size={14} /><div>{editErr}</div></div>}
+            <div style={S.formGroup}><label style={S.label}>Full Name *</label><Input value={editName} onChange={e => setEditName(e.target.value)} autoFocus /></div>
+            <div style={S.formGroup}><label style={S.label}>Email Address</label><Input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} /></div>
+            <div style={S.formGroup}><label style={S.label}>Role *</label>
+              <Select value={editRole} onChange={e => setEditRole(e.target.value)}>
+                <option value="">Select role...</option>
+                {roleOptions.map(r => <option key={r}>{r}</option>)}
+              </Select>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Btn onClick={() => setEditingUser(null)}>Cancel</Btn>
+              <Btn style={S.btnPrimary} onClick={async () => {
+                setEditErr("");
+                if (editName.trim().length < 2) return setEditErr("Name required.");
+                if (!editRole) return setEditErr("Role required.");
+                try {
+                  await onUpdateUser(editingUser.id, { name: editName.trim(), role: editRole, email: editEmail.trim() });
+                  setEditingUser(null);
+                } catch (e) {
+                  setEditErr("Failed to update: " + (e?.message || "unknown error"));
+                }
+              }}>Save Changes</Btn>
             </div>
           </div>
         </div>
@@ -1412,7 +1461,8 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
         </div>
         <div style={S.card}>
           <div style={S.sectionTitle}>Meetings by Tier</div>
-          <svg width="100%" viewBox={`0 0 ${TIERS.length * (barW + barGap) + 20} ${chartH + 50}`} style={{ overflow: "visible" }}>
+          <div style={{ overflowX: "auto" }}>
+          <svg width="100%" viewBox={`0 0 ${TIERS.length * (barW + barGap) + 20} ${chartH + 50}`} style={{ overflow: "visible", minWidth: TIERS.length * (barW + barGap) + 20 }}>
             {tierMeetCounts.map(({ t, n }, i) => {
               const x = 10 + i * (barW + barGap);
               const h = Math.max(4, (n / maxTierMeet) * chartH);
@@ -1425,6 +1475,7 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
               );
             })}
           </svg>
+          </div>
         </div>
       </div>
 
@@ -1820,6 +1871,7 @@ export default function App() {
   const [filterTier, setFilterTier] = useState("");
   const [filterDepth, setFilterDepth] = useState("");
   const [filterRisk, setFilterRisk] = useState("");
+  const [occPage, setOccPage] = useState(0);
   const [filterMeetSearch, setFilterMeetSearch] = useState("");
   const [filterMeetOcc, setFilterMeetOcc] = useState("");
   const [filterMeetOutcome, setFilterMeetOutcome] = useState("");
@@ -1931,14 +1983,21 @@ export default function App() {
     try { localStorage.removeItem(SK_SESSION); } catch {}
   };
 
-  const handleAddUser = async ({ name, role, department, isAdmin = false, otp }) => {
+  const handleAddUser = async ({ name, role, email, department, isAdmin = false, otp }) => {
     const hashedOtp = await hashCode(otp);
     const result = await dispatch(createUserThunk({
-      name, role, department, is_admin: isAdmin, is_active: true,
+      name, role, email: email || null, department, is_admin: isAdmin, is_active: true,
       password_hash: hashedOtp, created_by: currentUser.name,
     }));
     if (createUserThunk.fulfilled.match(result)) {
       addAudit(currentUser.name, `added user${isAdmin ? " (admin)" : ""}`, name);
+    }
+  };
+
+  const handleUpdateUser = async (id, { name, role, email }) => {
+    const result = await dispatch(patchUserThunk({ id, name, role, email: email || null }));
+    if (patchUserThunk.fulfilled.match(result)) {
+      addAudit(currentUser.name, "updated user", name);
     }
   };
 
@@ -2177,13 +2236,25 @@ export default function App() {
     addAudit(currentUser.name, "deleted role", role?.name || "");
   };
 
-  const filteredOccs = useMemo(() => occs.filter(o => {
-    if (search && !o.name.toLowerCase().includes(search.toLowerCase()) && !(o.city||"").toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterTier && o.tier !== filterTier) return false;
-    if (filterDepth && o.depth !== filterDepth) return false;
-    if (filterRisk && o.risk !== filterRisk) return false;
-    return true;
-  }), [occs, search, filterTier, filterDepth, filterRisk]);
+  const handleUpdateRole = async (id, { name, permissions }) => {
+    const { error } = await supabase.from("roles").update({ name, permissions }).eq("id", id);
+    if (!error) setRoles(p => p.map(r => r.id === id ? { ...r, name, permissions } : r));
+    addAudit(currentUser.name, "updated role", name);
+  };
+
+  const OCC_PAGE_SIZE = 20;
+  const filteredOccs = useMemo(() => {
+    setOccPage(0);
+    return occs.filter(o => {
+      if (search && !o.name.toLowerCase().includes(search.toLowerCase()) && !(o.city||"").toLowerCase().includes(search.toLowerCase())) return false;
+      if (filterTier && o.tier !== filterTier) return false;
+      if (filterDepth && o.depth !== filterDepth) return false;
+      if (filterRisk && o.risk !== filterRisk) return false;
+      return true;
+    });
+  }, [occs, search, filterTier, filterDepth, filterRisk]);
+  const pagedOccs = filteredOccs.slice(occPage * OCC_PAGE_SIZE, (occPage + 1) * OCC_PAGE_SIZE);
+  const occTotalPages = Math.ceil(filteredOccs.length / OCC_PAGE_SIZE);
 
   const filteredMeets = useMemo(() => [...meets].filter(m => {
     if (filterMeetOcc && m.occupierId !== filterMeetOcc) return false;
@@ -2275,12 +2346,12 @@ export default function App() {
                 </div>
                 <div style={{ ...S.card, padding: "6px 10px" }}>
                   <div style={{ display: "flex", alignItems: "center", padding: "4px 10px 8px", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", gap: 10, borderBottom: "1px solid var(--divider)" }}>
-                    {currentUser.isAdmin && <div style={{ width: 22 }}><input type="checkbox" checked={filteredOccs.length > 0 && filteredOccs.every(o => selectedOccIds.has(o.id))} onChange={e => { if (e.target.checked) setSelectedOccIds(new Set(filteredOccs.map(o => o.id))); else setSelectedOccIds(new Set()); }} /></div>}
+                    {currentUser.isAdmin && <div style={{ width: 22 }}><input type="checkbox" checked={pagedOccs.length > 0 && pagedOccs.every(o => selectedOccIds.has(o.id))} onChange={e => { if (e.target.checked) setSelectedOccIds(new Set(pagedOccs.map(o => o.id))); else setSelectedOccIds(new Set()); }} /></div>}
                     <div style={{ width: 9 }} /><div style={{ flex: 1 }}>Name</div><div style={{ width: 110 }}>Tier</div><div style={{ width: 90 }}>Depth</div><div style={{ width: 120 }}>City</div><div style={{ width: 90 }}>Risk</div><div style={{ width: 80 }}>GCC</div><div style={{ width: 100 }}>Last Meeting</div><div style={{ width: 80 }}>Added by</div><div style={{ width: 20 }} />
                   </div>
                   {filteredOccs.length === 0
                     ? <div style={{ textAlign: "center", padding: 32, color: "var(--text-muted)", fontSize: 13 }}>No occupiers match your filters</div>
-                    : filteredOccs.map(o => {
+                    : pagedOccs.map(o => {
                       const occMeets = meets.filter(m => m.occupierId === o.id).sort((a, b) => b.date.localeCompare(a.date));
                       const last = occMeets[0];
                       const isSel = selectedOccIds.has(o.id);
@@ -2306,6 +2377,18 @@ export default function App() {
                         </div>
                       );
                     })}
+                  {occTotalPages > 1 && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--divider)" }}>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        Showing {occPage * OCC_PAGE_SIZE + 1}–{Math.min((occPage + 1) * OCC_PAGE_SIZE, filteredOccs.length)} of {filteredOccs.length}
+                      </span>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Btn style={S.btnSm} onClick={() => setOccPage(p => Math.max(0, p - 1))} disabled={occPage === 0}>← Prev</Btn>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)", alignSelf: "center" }}>Page {occPage + 1} / {occTotalPages}</span>
+                        <Btn style={S.btnSm} onClick={() => setOccPage(p => Math.min(occTotalPages - 1, p + 1))} disabled={occPage >= occTotalPages - 1}>Next →</Btn>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2391,8 +2474,8 @@ export default function App() {
             {tab === "tasks" && <TasksTab actionItems={actionItems} meets={meets} occs={occs} currentUser={currentUser} onUpdateStatus={handleUpdateActionItem} onGotoOcc={gotoOcc} />}
             {tab === "calendar" && <CalendarTab events={events} meets={meets} occs={occs} currentUser={currentUser} onAddEvent={handleAddEvent} onDeleteEvent={handleDeleteEvent} onGotoOcc={gotoOcc} />}
             {tab === "analytics" && <AnalyticsTab occs={occs} meets={meets} />}
-            {tab === "rbac" && canSeeModule(currentUser, "rbac") && <RolesTab roles={roles} currentUser={currentUser} onAddRole={handleAddRole} onDeleteRole={handleDeleteRole} />}
-            {tab === "users" && canSeeModule(currentUser, "users") && <UsersTab users={users} roles={roles} audit={audit} currentUser={currentUser} onAddUser={handleAddUser} onResetOTP={handleResetOTP} onToggleActive={handleToggleActive} onToggleAdmin={handleToggleAdmin} />}
+            {tab === "rbac" && canSeeModule(currentUser, "rbac") && <RolesTab roles={roles} currentUser={currentUser} onAddRole={handleAddRole} onDeleteRole={handleDeleteRole} onUpdateRole={handleUpdateRole} />}
+            {tab === "users" && canSeeModule(currentUser, "users") && <UsersTab users={users} roles={roles} audit={audit} currentUser={currentUser} onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onResetOTP={handleResetOTP} onToggleActive={handleToggleActive} onToggleAdmin={handleToggleAdmin} />}
             {tab === "admin" && currentUser.isAdmin && <AdminPanel audit={audit} />}
           </div>
         </div>

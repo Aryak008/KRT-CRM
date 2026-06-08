@@ -165,3 +165,11 @@ UPDATE occupiers SET depth = 'Low'    WHERE depth = 'Average';
 UPDATE occupiers SET depth = 'Medium' WHERE depth = 'Good';
 UPDATE occupiers SET depth = 'High'   WHERE depth = 'Very Good';
 UPDATE occupiers SET depth = 'High'   WHERE depth = 'Excellent';
+
+-- ============================================================
+-- Migration: add email and otp_code to existing users table
+-- Run in Supabase SQL Editor if the table already exists
+-- without these columns (pre-0.0.21 deployments)
+-- ============================================================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email    TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code TEXT;

@@ -2302,7 +2302,7 @@ export default function App() {
                 {currentUser.name}
                 {currentUser.isAdmin && <span style={{ fontSize: 9, color: "#E97132", marginLeft: 6 }}>● ADMIN</span>}
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{currentUser.role}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{currentUser.email || currentUser.role}</div>
             </div>
             <button style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", marginLeft: 4, padding: 0 }} onClick={handleLogout}>Sign out</button>
           </div>

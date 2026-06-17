@@ -1466,10 +1466,15 @@ function Dashboard({ occs, meets, currentUser, onGotoOcc, onLogMeeting }) {
             {tierMeetCounts.map(({ t, n }, i) => {
               const x = 10 + i * (barW + barGap);
               const h = Math.max(4, (n / maxTierMeet) * chartH);
+              const showInside = h >= 28;
               return (
                 <g key={t}>
-                  <rect x={x} y={chartH - h} width={barW} height={h} rx={6} fill={TIER_BG[t]} opacity={0.85} />
-                  <text x={x + barW / 2} y={chartH - h - 6} textAnchor="middle" fill="var(--text-strong)" fontSize={13} fontWeight={700}>{n}</text>
+                  <rect x={x} y={chartH - h} width={barW} height={h} rx={6} fill={TIER_BG[t]} opacity={0.85}>
+                    {!showInside && <title>Tier {t}: {n} meetings</title>}
+                  </rect>
+                  {showInside && (
+                    <text x={x + barW / 2} y={chartH - h / 2 + 5} textAnchor="middle" fill="#fff" fontSize={13} fontWeight={700} style={{ pointerEvents: "none" }}>{n}</text>
+                  )}
                   <text x={x + barW / 2} y={chartH + 18} textAnchor="middle" fill="var(--text-muted)" fontSize={11}>Tier {t}</text>
                 </g>
               );
